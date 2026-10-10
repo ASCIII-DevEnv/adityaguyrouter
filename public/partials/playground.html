@@ -1,27 +1,25 @@
 <!-- TAB 6: PLAYGROUND -->
 <div class="glass-panel p-5">
   <div class="flex gap-4 flex-wrap items-start mb-4">
-    <div>
-      <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">AKUN PENGUJI</label>
-      <select id="pgAccount" class="block px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white min-w-[220px] shadow-xs focus:ring-2 focus:ring-blue-500/20" onchange="updatePgAccountBadge()">
-        <option value="">Auto (Account Pool &amp; Failover)</option>
-      </select>
-    </div>
-    <div>
-      <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">PILIH MODEL</label>
-      <select id="pgModel" class="block px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white shadow-xs focus:ring-2 focus:ring-blue-500/20">
-        <option value="gemini-3.8-flash-tiered">Gemini 3.8 Flash (Auto Tiered)</option>
-        <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Thinking)</option>
-        <option value="claude-opus-4-6-thinking">Claude Opus 4.6 (Thinking)</option>
-        <option value="gpt-oss-120b-medium">GPT-OSS 120B (Medium)</option>
-      </select>
-    </div>
-    <div class="self-end pb-1">
-      <span class="badge badge-success text-xs font-semibold" id="pgStatus">Ready</span>
-    </div>
-    <div class="ml-auto self-end pb-1">
-      <button class="btn btn-sm text-xs" onclick="clearPlayground()">Bersihkan Chat</button>
-    </div>
+  <div>
+    <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">AKUN PENGUJI</label>
+    <select id="pgAccount" class="block px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white min-w-[220px] shadow-xs focus:ring-2 focus:ring-blue-500/20" onchange="updatePgAccountBadge()">
+      <option value="">Auto (Account Pool &amp; Failover)</option>
+    </select>
+  </div>
+  <div>
+    <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">PILIH MODEL</label>
+    <select id="pgModel" class="block px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white shadow-xs focus:ring-2 focus:ring-blue-500/20">
+      <option value="gemini-3.8-flash-tiered">Gemini 3.8 Flash (Auto Tiered)</option>
+      <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Thinking)</option>
+      <option value="claude-opus-4-6-thinking">Claude Opus 4.6 (Thinking)</option>
+      <option value="gpt-oss-120b-medium">GPT-OSS 120B (Medium)</option>
+    </select>
+  </div>
+  <div class="flex items-center gap-2 ml-auto self-end pb-1">
+    <span id="pgStatus" class="badge badge-success text-[11px]">Ready</span>
+    <button class="btn btn-sm text-xs" onclick="clearPlayground()">Bersihkan Chat</button>
+  </div>
   </div>
 
   <!-- Persona & Skills Selector (Pills) -->

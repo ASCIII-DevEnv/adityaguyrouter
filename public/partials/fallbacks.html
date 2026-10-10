@@ -3,13 +3,12 @@
   <div class="flex justify-between items-center flex-wrap gap-4 mb-5">
     <div>
       <h2 class="text-xl font-extrabold text-slate-900 flex items-center gap-2">
-        <span class="inline-flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-600"><use href="#icon-git-fork"></use></svg> Pengaturan Model Fallback Chain</span>
+        <span class="inline-flex items-center gap-1.5">Pengaturan Model Fallback Chain</span>
       </h2>
       <p class="text-xs text-slate-500 mt-1">Konfigurasi otomatis jika model upstream utama mengembalikan error kuota (429 / Quota Exceeded), permintaan otomatis dialihkan ke rantai model cadangan.</p>
     </div>
     <div class="flex gap-2">
       <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-sm" onclick="saveAllFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-save"></use></svg> Simpan Semua Pengaturan</button>
-      <button class="btn btn-sm inline-flex items-center gap-1.5" onclick="fetchFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Refresh Aturan</button>
       <button class="btn btn-sm inline-flex items-center gap-1.5" onclick="resetDefaultFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Reset Default</button>
     </div>
   </div>

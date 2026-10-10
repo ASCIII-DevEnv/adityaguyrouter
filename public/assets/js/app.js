@@ -81,7 +81,7 @@ let currentTab = 'dashboard';
       if (loadedTabs.has(tabId)) return true;
 
       try {
-        const res = await fetch(`/partials/${tabId}.html`);
+        const res = await fetch(`/partials/${tabId}.html?v=0.1.1`);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const html = await res.text();
         target.innerHTML = html;
@@ -219,6 +219,15 @@ let currentTab = 'dashboard';
         renderProvider();
         updatePgAccountsDropdown();
         renderComboSkillsPills();
+
+        // Jika ada akun baru yang kuota/reset time-nya masih dimuat dari Google, auto-refresh setelah 2 detik
+        const hasPendingQuota = accountsData.some(a => a.isActive && (!a.families || !a.quotaWeeklyResetAt));
+        if (hasPendingQuota && !window._quotaPollingTimer) {
+          window._quotaPollingTimer = setTimeout(() => {
+            window._quotaPollingTimer = null;
+            fetchAccounts();
+          }, 2000);
+        }
       } catch (err) {
         console.error('fetchAccounts error:', err);
       }
@@ -250,11 +259,29 @@ let currentTab = 'dashboard';
       }
     }
 
+    function formatQuotaPercent(val) {
+      if (val === undefined || val === null || isNaN(val)) return '0%';
+      const n = Number(val);
+      if (Number.isInteger(n)) return `${n}%`;
+      // Pertahankan desimal presisi seperti pada Antigravity (hingga 2 digit di belakang desimal tanpa pembulatan integer)
+      const formatted = parseFloat(n.toFixed(2));
+      return `${formatted}%`;
+    }
+
     function renderUsage() {
       const grid = document.getElementById('usageAccountsGrid');
       if (!grid) return;
       if (accountsData.length === 0) {
-        grid.innerHTML = '<div class="col-span-full text-center py-8 text-slate-500">Belum ada akun Google terdaftar. Silakan login di tab Provider.</div>';
+        grid.innerHTML = `
+          <div class="col-span-full text-center py-10 text-slate-500 bg-white/60 rounded-2xl border border-dashed border-slate-300 space-y-3">
+            <p class="text-sm font-semibold text-slate-600">Belum ada akun Google terdaftar.</p>
+            <div>
+              <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-sm" onclick="loginGoogle()">
+                ${svgIcon('plus', 'icon-sm')} Login Akun Google Sekarang
+              </button>
+            </div>
+          </div>
+        `;
         return;
       }
 
@@ -263,10 +290,10 @@ let currentTab = 'dashboard';
         const gemini = families.gemini || null;
         const claude = families.claude || null;
 
-        const gemini5h = gemini?.limit5h?.remainingPercent ?? Math.round(acc.quota5hPercent || 0);
-        const geminiWk = gemini?.limitWeekly?.remainingPercent ?? Math.round(acc.quotaWeeklyPercent || 0);
-        const claude5h = claude?.limit5h?.remainingPercent ?? Math.round(acc.quota5hPercent || 0);
-        const claudeWk = claude?.limitWeekly?.remainingPercent ?? Math.round(acc.quotaWeeklyPercent || 0);
+        const gemini5h = gemini?.limit5h?.remainingPercent ?? (acc.quota5hPercent ?? 0);
+        const geminiWk = gemini?.limitWeekly?.remainingPercent ?? (acc.quotaWeeklyPercent ?? 0);
+        const claude5h = claude?.limit5h?.remainingPercent ?? (acc.quota5hPercent ?? 0);
+        const claudeWk = claude?.limitWeekly?.remainingPercent ?? (acc.quotaWeeklyPercent ?? 0);
 
         const gemini5hReset = gemini?.limit5h?.resetAt || acc.quota5hResetAt || '';
         const geminiWkReset = gemini?.limitWeekly?.resetAt || acc.quotaWeeklyResetAt || '';
@@ -285,10 +312,20 @@ let currentTab = 'dashboard';
           <div class="item-card col-span-full">
             <div class="item-card-header">
               <div class="flex items-center gap-2.5">
-                <div class="item-avatar bg-slate-900 border border-white/10 flex items-center justify-center">${acc.picture ? `<img src="${acc.picture}" alt="" onerror="this.classList.add('hidden'); this.parentElement.innerHTML='<svg class=\'w-5 h-5\'><use href=\'#icon-antigravity\'></use></svg>';" />` : `<svg class="w-5 h-5"><use href="#icon-antigravity"></use></svg>`}</div>
+                <div class="relative shrink-0">
+                  <div class="item-avatar bg-slate-900 border border-white/10 flex items-center justify-center ${!acc.isActive ? 'opacity-60 grayscale' : ''}">${acc.picture ? `<img src="${acc.picture}" alt="" onerror="this.classList.add('hidden'); this.parentElement.innerHTML='<svg class=\'w-5 h-5\'><use href=\'#icon-antigravity\'></use></svg>';" />` : `<svg class="w-5 h-5"><use href="#icon-antigravity"></use></svg>`}</div>
+                  ${!acc.isActive ? `
+                    <span class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-sm ring-2 ring-white" title="Akun Dinonaktifkan">
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </span>
+                  ` : ''}
+                </div>
                 <div>
                   <div class="font-extrabold text-base text-slate-900">${escapeHtml(acc.name || acc.email)}</div>
-                  <div class="text-xs text-slate-500">${escapeHtml(acc.email)} &bull; ${escapeHtml(acc.tier || 'Google AI Pro')} &bull; ${escapeHtml(acc.projectId || 'Default Project')}</div>
+                  <div class="text-xs text-slate-500">${escapeHtml(acc.email)}</div>
                 </div>
               </div>
               <div class="flex gap-2 items-center">
@@ -306,7 +343,7 @@ let currentTab = 'dashboard';
                 <div class="mb-3">
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-600 font-medium">Gemini 5 Jam (Session)</span>
-                    <strong class="text-sky-800">${Math.round(gemini5h)}%</strong>
+                    <strong class="text-sky-800">${formatQuotaPercent(gemini5h)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-sky-600" style="width: ${gemini5h}%;"></div></div>
                   ${gemini5hResetText ? `<div class="text-[10px] text-sky-700/80 font-medium mt-1 flex items-center gap-1">${svgIcon('clock', 'w-3 h-3')} ${gemini5hResetText}</div>` : ''}
@@ -314,7 +351,7 @@ let currentTab = 'dashboard';
                 <div>
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-600 font-medium">Gemini Mingguan</span>
-                    <strong class="text-sky-800">${Math.round(geminiWk)}%</strong>
+                    <strong class="text-sky-800">${formatQuotaPercent(geminiWk)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-sky-600" style="width: ${geminiWk}%;"></div></div>
                   ${geminiWkResetText ? `<div class="text-[10px] text-sky-700/80 font-medium mt-1 flex items-center gap-1">${svgIcon('clock', 'w-3 h-3')} ${geminiWkResetText}</div>` : ''}
@@ -330,7 +367,7 @@ let currentTab = 'dashboard';
                         return `
                         <div class="bg-white p-1.5 rounded-lg border border-slate-200/60 shadow-2xs">
                           <div class="font-semibold text-[11px] text-slate-800 truncate" title="${name}">${name}</div>
-                          <div class="text-sky-600 font-extrabold text-xs">${Math.round(m.remainingPercent ?? 0)}%</div>
+                          <div class="text-sky-600 font-extrabold text-xs">${formatQuotaPercent(m.remainingPercent ?? 0)}</div>
                         </div>
                       `;}).join('')}
                     </div>
@@ -347,7 +384,7 @@ let currentTab = 'dashboard';
                 <div class="mb-3">
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-600 font-medium">Claude 5 Jam (Session)</span>
-                    <strong class="text-purple-800">${Math.round(claude5h)}%</strong>
+                    <strong class="text-purple-800">${formatQuotaPercent(claude5h)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-purple-600" style="width: ${claude5h}%;"></div></div>
                   ${claude5hResetText ? `<div class="text-[10px] text-purple-700/80 font-medium mt-1 flex items-center gap-1">${svgIcon('clock', 'w-3 h-3')} ${claude5hResetText}</div>` : ''}
@@ -355,7 +392,7 @@ let currentTab = 'dashboard';
                 <div>
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-600 font-medium">Claude Mingguan</span>
-                    <strong class="text-purple-800">${Math.round(claudeWk)}%</strong>
+                    <strong class="text-purple-800">${formatQuotaPercent(claudeWk)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-purple-600" style="width: ${claudeWk}%;"></div></div>
                   ${claudeWkResetText ? `<div class="text-[10px] text-purple-700/80 font-medium mt-1 flex items-center gap-1">${svgIcon('clock', 'w-3 h-3')} ${claudeWkResetText}</div>` : ''}
@@ -371,7 +408,7 @@ let currentTab = 'dashboard';
                         return `
                         <div class="bg-white p-1.5 rounded-lg border border-slate-200/60 shadow-2xs">
                           <div class="font-semibold text-[11px] text-slate-800 truncate" title="${name}">${name}</div>
-                          <div class="text-purple-600 font-extrabold text-xs">${Math.round(m.remainingPercent ?? 0)}%</div>
+                          <div class="text-purple-600 font-extrabold text-xs">${formatQuotaPercent(m.remainingPercent ?? 0)}</div>
                         </div>
                       `;}).join('')}
                     </div>
@@ -388,13 +425,50 @@ let currentTab = 'dashboard';
         `;
       }).join('');
     }
-    async function refreshAccountQuota(email) {
-      await fetch('/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, action: 'refresh' }),
-      });
-      fetchAccounts();
+    async function refreshAccountQuota(email, btnEl) {
+      let origHtml = '';
+      if (btnEl) {
+        origHtml = btnEl.innerHTML;
+        btnEl.disabled = true;
+        btnEl.innerHTML = `${svgIcon('refresh-cw', 'w-3 h-3 animate-spin')} Sinkron...`;
+      }
+      try {
+        await fetch('/api/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, action: 'refresh' }),
+        });
+        await fetchAccounts();
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.innerHTML = origHtml;
+        }
+      }
+    }
+
+    async function refreshAllAccounts(btnEl) {
+      let origHtml = '';
+      if (btnEl) {
+        origHtml = btnEl.innerHTML;
+        btnEl.disabled = true;
+        btnEl.innerHTML = `${svgIcon('refresh-cw', 'w-3.5 h-3.5 animate-spin')} Menyinkronkan...`;
+      }
+      try {
+        await Promise.all((accountsData || []).map(a => 
+          fetch('/api/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: a.email, action: 'refresh' }),
+          })
+        ));
+        await fetchAccounts();
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.innerHTML = origHtml;
+        }
+      }
     }
 
     function formatDateTime(isoString) {
@@ -441,61 +515,81 @@ let currentTab = 'dashboard';
       const claude = families.claude || null;
 
       // Extract Gemini limits & reset
-      const geminiPct = gemini?.limitWeekly?.remainingPercent !== undefined ? Number(gemini.limitWeekly.remainingPercent) : (acc.quotaWeeklyPercent !== undefined ? Number(acc.quotaWeeklyPercent) : 100);
-      const geminiReset = gemini?.limitWeekly?.resetAt || acc.quotaWeeklyResetAt || '';
-      const geminiZero = geminiPct <= 0;
-      const geminiColor = geminiZero ? 'text-red-600' : (geminiPct < 20 ? 'text-amber-600' : 'text-sky-600');
-      const geminiFillColor = geminiZero ? 'bg-red-600' : (geminiPct < 20 ? 'bg-amber-500' : 'bg-sky-600');
+      const gemini5h = gemini?.limit5h?.remainingPercent !== undefined ? Number(gemini.limit5h.remainingPercent) : (acc.quota5hPercent !== undefined ? Number(acc.quota5hPercent) : 100);
+      const geminiWk = gemini?.limitWeekly?.remainingPercent !== undefined ? Number(gemini.limitWeekly.remainingPercent) : (acc.quotaWeeklyPercent !== undefined ? Number(acc.quotaWeeklyPercent) : 100);
+      const gemini5hReset = gemini?.limit5h?.resetAt || acc.quota5hResetAt || '';
+      const geminiWkReset = gemini?.limitWeekly?.resetAt || acc.quotaWeeklyResetAt || '';
 
       // Extract Claude & GPT limits & reset
-      const claudePct = claude?.limitWeekly?.remainingPercent !== undefined ? Number(claude.limitWeekly.remainingPercent) : 100;
-      const claudeReset = claude?.limitWeekly?.resetAt || '';
-      const claudeZero = claudePct <= 0;
-      const claudeColor = claudeZero ? 'text-red-600' : (claudePct < 20 ? 'text-amber-600' : 'text-purple-600');
-      const claudeFillColor = claudeZero ? 'bg-red-600' : (claudePct < 20 ? 'bg-amber-500' : 'bg-purple-600');
+      const claude5h = claude?.limit5h?.remainingPercent !== undefined ? Number(claude.limit5h.remainingPercent) : (acc.quota5hPercent !== undefined ? Number(acc.quota5hPercent) : 100);
+      const claudeWk = claude?.limitWeekly?.remainingPercent !== undefined ? Number(claude.limitWeekly.remainingPercent) : (acc.quotaWeeklyPercent !== undefined ? Number(acc.quotaWeeklyPercent) : 100);
+      const claude5hReset = claude?.limit5h?.resetAt || '';
+      const claudeWkReset = claude?.limitWeekly?.resetAt || acc.quotaWeeklyResetAt || '';
 
-      const isBothExhausted = geminiZero && claudeZero;
+      const isBothExhausted = gemini5h <= 0 && claude5h <= 0 && geminiWk <= 0 && claudeWk <= 0;
 
       return `
         <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 mt-1.5 flex flex-col gap-2.5">
           <div class="flex items-center justify-between border-b border-slate-200/60 pb-1.5">
             <span class="font-extrabold text-xs text-slate-800 inline-flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5"><use href="#icon-calendar"></use></svg> Limit Weekly Model
+              <svg class="w-3.5 h-3.5"><use href="#icon-calendar"></use></svg> Status Kuota &amp; Limit Model
             </span>
-            <span class="text-[11px] text-slate-500 font-semibold">Rolling 7-Day</span>
+            <span class="text-[11px] text-slate-500 font-semibold">5-Jam &amp; 7-Hari</span>
           </div>
 
           <!-- Gemini Family -->
-          <div class="bg-white border border-slate-200 rounded-lg p-2.5">
-            <div class="flex justify-between items-center mb-1">
-              <span class="font-bold text-xs text-sky-600 inline-flex items-center gap-1">
-                ${svgIcon('cpu', 'w-3 h-3')} Gemini Family
-              </span>
-              <strong class="text-xs ${geminiColor}">${Math.round(geminiPct)}%</strong>
+          <div class="bg-white border border-slate-200 rounded-lg p-2.5 space-y-2">
+            <div>
+              <div class="flex justify-between items-center mb-0.5">
+                <span class="font-bold text-xs text-sky-600 inline-flex items-center gap-1">
+                  ${svgIcon('cpu', 'w-3 h-3')} Gemini Sesi (5 Jam)
+                </span>
+                <strong class="text-xs ${gemini5h <= 0 ? 'text-red-600' : (gemini5h < 20 ? 'text-amber-600' : 'text-sky-600')}">${formatQuotaPercent(gemini5h)}</strong>
+              </div>
+              <div class="progress-bar h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div class="progress-fill ${gemini5h <= 0 ? 'bg-red-600' : (gemini5h < 20 ? 'bg-amber-500' : 'bg-sky-600')} h-full" style="width: ${Math.min(100, Math.max(0, gemini5h))}%;"></div>
+              </div>
             </div>
-            <div class="progress-bar h-1.5 my-1 bg-slate-200 rounded-full overflow-hidden">
-              <div class="progress-fill ${geminiFillColor} h-full" style="width: ${Math.min(100, Math.max(0, geminiPct))}%;"></div>
-            </div>
-            <div class="flex justify-between text-[11px] text-slate-500 mt-1">
-              <span>Reset:</span>
-              <strong class="text-slate-700">${geminiReset ? formatDateTime(geminiReset) : 'Belum tercatat'}</strong>
+            <div>
+              <div class="flex justify-between items-center mb-0.5">
+                <span class="font-semibold text-[11px] text-slate-600">Gemini Mingguan (7 Hari)</span>
+                <strong class="text-xs ${geminiWk <= 0 ? 'text-red-600' : (geminiWk < 20 ? 'text-amber-600' : 'text-slate-700')}">${formatQuotaPercent(geminiWk)}</strong>
+              </div>
+              <div class="progress-bar h-1 bg-slate-100 rounded-full overflow-hidden">
+                <div class="progress-fill bg-sky-500 h-full" style="width: ${Math.min(100, Math.max(0, geminiWk))}%;"></div>
+              </div>
+              <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                <span>Reset:</span>
+                <strong class="text-slate-600">${geminiWkReset ? formatDateTime(geminiWkReset) : (gemini5hReset ? formatDateTime(gemini5hReset) : '<span class="text-amber-500 font-medium">Sedang memuat...</span>')}</strong>
+              </div>
             </div>
           </div>
 
           <!-- Claude Family -->
-          <div class="bg-white border border-slate-200 rounded-lg p-2.5">
-            <div class="flex justify-between items-center mb-1">
-              <span class="font-bold text-xs text-purple-600 inline-flex items-center gap-1">
-                ${svgIcon('layers', 'w-3 h-3')} Claude Family
-              </span>
-              <strong class="text-xs ${claudeColor}">${Math.round(claudePct)}%</strong>
+          <div class="bg-white border border-slate-200 rounded-lg p-2.5 space-y-2">
+            <div>
+              <div class="flex justify-between items-center mb-0.5">
+                <span class="font-bold text-xs text-purple-600 inline-flex items-center gap-1">
+                  ${svgIcon('layers', 'w-3 h-3')} Claude Sesi (5 Jam)
+                </span>
+                <strong class="text-xs ${claude5h <= 0 ? 'text-red-600' : (claude5h < 20 ? 'text-amber-600' : 'text-purple-600')}">${formatQuotaPercent(claude5h)}</strong>
+              </div>
+              <div class="progress-bar h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div class="progress-fill ${claude5h <= 0 ? 'bg-red-600' : (claude5h < 20 ? 'bg-amber-500' : 'bg-purple-600')} h-full" style="width: ${Math.min(100, Math.max(0, claude5h))}%;"></div>
+              </div>
             </div>
-            <div class="progress-bar h-1.5 my-1 bg-slate-200 rounded-full overflow-hidden">
-              <div class="progress-fill ${claudeFillColor} h-full" style="width: ${Math.min(100, Math.max(0, claudePct))}%;"></div>
-            </div>
-            <div class="flex justify-between text-[11px] text-slate-500 mt-1">
-              <span>Reset:</span>
-              <strong class="text-slate-700">${claudeReset ? formatDateTime(claudeReset) : 'Belum tercatat'}</strong>
+            <div>
+              <div class="flex justify-between items-center mb-0.5">
+                <span class="font-semibold text-[11px] text-slate-600">Claude Mingguan (7 Hari)</span>
+                <strong class="text-xs ${claudeWk <= 0 ? 'text-red-600' : (claudeWk < 20 ? 'text-amber-600' : 'text-slate-700')}">${formatQuotaPercent(claudeWk)}</strong>
+              </div>
+              <div class="progress-bar h-1 bg-slate-100 rounded-full overflow-hidden">
+                <div class="progress-fill bg-purple-500 h-full" style="width: ${Math.min(100, Math.max(0, claudeWk))}%;"></div>
+              </div>
+              <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                <span>Reset:</span>
+                <strong class="text-slate-600">${claudeWkReset ? formatDateTime(claudeWkReset) : (claude5hReset ? formatDateTime(claude5hReset) : '<span class="text-amber-500 font-medium">Sedang memuat...</span>')}</strong>
+              </div>
             </div>
           </div>
 
@@ -512,7 +606,16 @@ let currentTab = 'dashboard';
       if (!container) return;
 
       if (!accountsData || accountsData.length === 0) {
-        container.innerHTML = '<div class="text-center py-10 text-slate-500 bg-white/60 rounded-2xl border border-dashed border-slate-300">Belum ada akun Google terdaftar. Klik <strong>Login Akun Google</strong> di atas.</div>';
+        container.innerHTML = `
+          <div class="text-center py-12 text-slate-500 bg-white/60 rounded-2xl border border-dashed border-slate-300 space-y-3">
+            <p class="text-sm font-semibold text-slate-600">Belum ada akun Google terdaftar di sistem.</p>
+            <div>
+              <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-sm" onclick="loginGoogle()">
+                ${svgIcon('plus', 'icon-sm')} Login Akun Google Sekarang
+              </button>
+            </div>
+          </div>
+        `;
         return;
       }
 
@@ -555,7 +658,17 @@ let currentTab = 'dashboard';
                     <!-- Card Top Header -->
                     <div class="item-card-header">
                       <div class="flex items-center gap-2.5 min-w-0">
-                        <div class="item-avatar bg-slate-900 border border-white/10 flex items-center justify-center shrink-0">${acc.picture ? `<img src="${acc.picture}" alt="" onerror="this.classList.add('hidden'); this.parentElement.textContent='${acc.email ? acc.email[0].toUpperCase() : 'G'}';" />` : (acc.email ? acc.email[0].toUpperCase() : 'G')}</div>
+                        <div class="relative shrink-0">
+                          <div class="item-avatar bg-slate-900 border border-white/10 flex items-center justify-center ${!acc.isActive ? 'opacity-60 grayscale' : ''}">${acc.picture ? `<img src="${acc.picture}" alt="" onerror="this.classList.add('hidden'); this.parentElement.textContent='${acc.email ? acc.email[0].toUpperCase() : 'G'}';" />` : (acc.email ? acc.email[0].toUpperCase() : 'G')}</div>
+                          ${!acc.isActive ? `
+                            <span class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-sm ring-2 ring-white" title="Akun Dinonaktifkan">
+                              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </span>
+                          ` : ''}
+                        </div>
                         <div class="min-w-0">
                           <div class="font-extrabold text-sm text-slate-900 truncate flex items-center gap-1.5">
                             <span class="truncate">${escapeHtml(acc.name || acc.email)}</span>
@@ -567,20 +680,11 @@ let currentTab = 'dashboard';
                       <div class="flex items-center gap-1 shrink-0">
                         <button class="btn btn-sm px-2 py-0.5 text-xs" title="Pindahkan ke atas (Prioritas lebih tinggi)" ${idx === 0 ? 'disabled' : ''} onclick="moveAccountOrder(${idx}, -1)">&uarr;</button>
                         <button class="btn btn-sm px-2 py-0.5 text-xs" title="Pindahkan ke bawah (Prioritas lebih rendah)" ${idx === accountsData.length - 1 ? 'disabled' : ''} onclick="moveAccountOrder(${idx}, 1)">&darr;</button>
-                        <span class="badge ${acc.isActive ? 'badge-success' : 'badge-danger'} text-xs">${acc.isActive ? 'Active' : 'Disabled'}</span>
                       </div>
                     </div>
 
-                    <!-- Meta & Tier -->
+                    <!-- Meta -->
                     <div class="text-xs text-slate-600 flex flex-col gap-1.5 mt-1.5">
-                      <div class="flex justify-between">
-                        <span class="text-slate-500">Project ID:</span>
-                        <code class="font-mono text-slate-700">${escapeHtml(acc.projectId || 'Default Project')}</code>
-                      </div>
-                      <div class="flex justify-between">
-                        <span class="text-slate-500">Subscription:</span>
-                        <strong class="text-purple-600 font-bold">${escapeHtml(acc.tier || 'Google AI Pro')}</strong>
-                      </div>
                       <div class="flex justify-between">
                         <span class="text-slate-500">Total Request:</span>
                         <span class="font-bold text-slate-800">${acc.totalRequests || 0}</span>
@@ -589,6 +693,12 @@ let currentTab = 'dashboard';
                         <div class="flex justify-between">
                           <span class="text-slate-500">Token Expire:</span>
                           <span class="text-slate-600 font-medium">${new Date(acc.tokenExpiresAt).toLocaleTimeString()}</span>
+                        </div>
+                      ` : ''}
+                      ${acc.quotaFetchedAt ? `
+                        <div class="flex justify-between">
+                          <span class="text-slate-500">Terakhir Sync:</span>
+                          <span class="text-slate-600 font-medium">${formatDateTime(acc.quotaFetchedAt)}</span>
                         </div>
                       ` : ''}
 
@@ -605,7 +715,8 @@ let currentTab = 'dashboard';
                     </div>
 
                     <!-- Actions -->
-                    <div class="flex gap-2 justify-end mt-3 pt-2.5 border-t border-slate-100">
+                    <div class="flex gap-2 justify-end mt-3 pt-2.5 border-t border-slate-100 flex-wrap">
+                      <button class="btn btn-sm inline-flex items-center gap-1.5" title="Refresh kuota & limit langsung dari Google" onclick="refreshAccountQuota('${escapeHtml(acc.email)}', this)">${svgIcon('refresh-cw', 'icon-sm')} Refresh Kuota</button>
                       <button class="btn btn-sm" onclick="toggleAccount('${escapeHtml(acc.email)}', ${!acc.isActive})">${acc.isActive ? 'Nonaktifkan' : 'Aktifkan'}</button>
                       <button class="btn btn-sm btn-danger" onclick="deleteAccount('${escapeHtml(acc.email)}')">Hapus</button>
                     </div>
@@ -742,6 +853,37 @@ let currentTab = 'dashboard';
       } catch (err) {
         alert('Gagal mengimpor kredensial lokal: ' + err.message);
       }
+    }
+
+    function loginGoogle() {
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        '/api/auth/login',
+        'googleLoginPopup',
+        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+      );
+      if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+        // Fallback jika browser memblokir popup
+        window.location.href = '/api/auth/login';
+        return;
+      }
+
+      // Pantau jika popup selesai / ditutup
+      const prevCount = accountsData ? accountsData.length : 0;
+      const timer = setInterval(async () => {
+        if (popup.closed) {
+          clearInterval(timer);
+          setTimeout(async () => {
+            await fetchAccounts();
+            if (accountsData && accountsData.length > prevCount) {
+              switchTab('provider');
+            }
+          }, 600);
+        }
+      }, 1000);
     }
 
     async function sendTestWebhook() {
@@ -1084,40 +1226,185 @@ let currentTab = 'dashboard';
         skillsData = data.skills || [];
         const grid = document.getElementById('skillsGrid');
         if (!grid) return;
-        grid.innerHTML = skillsData.map(sk => `
-          <div class="item-card">
-            <div class="item-card-header">
-              <div class="font-extrabold text-sm text-slate-900">${escapeHtml(sk.name)}</div>
-              <span class="badge ${sk.isBuiltin ? 'badge-purple' : 'badge-success'}">${sk.isBuiltin ? 'Builtin' : 'Custom'}</span>
+        if (skillsData.length === 0) {
+          grid.innerHTML = `
+            <div class="col-span-full text-center py-8 text-slate-500 bg-white/60 rounded-2xl border border-dashed border-slate-300 space-y-3">
+              <p class="text-sm font-semibold text-slate-600">Belum ada skill aktif terdaftar.</p>
+              <div>
+                <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5" onclick="openCreateSkillModal()">
+                  <svg class="w-3.5 h-3.5"><use href="#icon-plus"></use></svg> Tambah Skill
+                </button>
+              </div>
             </div>
-            <p class="text-xs text-slate-500">${escapeHtml(sk.description)}</p>
-            <pre class="bg-slate-900 text-slate-100 p-3 rounded-xl text-[11px] max-h-36 overflow-y-auto whitespace-pre-wrap break-words font-mono"><code>${escapeHtml(sk.systemPrompt)}</code></pre>
+          `;
+          renderComboSkillsPills();
+          return;
+        }
+
+        grid.innerHTML = skillsData.map(sk => `
+          <div class="item-card flex flex-col justify-between ${!sk.enabled ? 'opacity-75 bg-slate-50/70 border-dashed' : ''}">
+            <div class="space-y-2.5">
+              <div class="item-card-header items-center">
+                <div class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                  <span>${escapeHtml(sk.name)}</span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span class="badge ${sk.isBuiltin ? 'badge-purple' : 'badge-blue'} text-[10px]">${sk.isBuiltin ? 'Builtin' : 'Custom'}</span>
+                  <span class="badge ${sk.enabled ? 'badge-success' : 'badge-neutral opacity-80'} text-[10px] inline-flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full ${sk.enabled ? 'bg-emerald-500' : 'bg-slate-400'}"></span>
+                    ${sk.enabled ? 'Aktif' : 'Nonaktif'}
+                  </span>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500 leading-relaxed">${escapeHtml(sk.description)}</p>
+              <pre class="bg-slate-900 text-slate-100 p-3 rounded-xl text-[11px] max-h-36 overflow-y-auto whitespace-pre-wrap break-words font-mono"><code>${escapeHtml(sk.systemPrompt)}</code></pre>
+            </div>
+            <div class="flex items-center justify-between pt-3 border-t border-slate-100 mt-3 gap-2">
+              <button class="btn btn-xs ${sk.enabled ? 'btn-outline text-amber-700 hover:bg-amber-50' : 'btn-primary'} inline-flex items-center gap-1" onclick="toggleSkill('${escapeHtml(sk.id)}')">
+                <svg class="w-3 h-3"><use href="${sk.enabled ? '#icon-ban' : '#icon-check'}"></use></svg>
+                ${sk.enabled ? 'Nonaktifkan' : 'Aktifkan'}
+              </button>
+              <button class="btn btn-xs btn-outline text-red-600 hover:bg-red-50 hover:text-red-700 inline-flex items-center gap-1" onclick="deleteSkillPrompt('${escapeHtml(sk.id)}', '${escapeHtml(sk.name)}', ${Boolean(sk.isBuiltin)})">
+                <svg class="w-3 h-3"><use href="#icon-trash-2"></use></svg>
+                Hapus
+              </button>
+            </div>
           </div>
         `).join('');
         renderComboSkillsPills();
       } catch (err) {
-        console.error(err);
+        console.error('fetchSkills error:', err);
       }
     }
-    function openCreateSkillModal() {
-      const name = prompt('Nama Skill:');
-      if (!name) return;
-      const description = prompt('Deskripsi Skill:');
-      const systemPrompt = prompt('System Prompt:');
-      if (!systemPrompt) return;
 
-      fetch('/api/skills', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description, systemPrompt, enabled: true }),
-      }).then(() => fetchSkills());
+    async function toggleSkill(id) {
+      try {
+        const res = await fetch(`/api/skills?action=toggle&id=${encodeURIComponent(id)}`, { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.error || 'Gagal mengubah status skill');
+          return;
+        }
+        await fetchSkills();
+      } catch (e) {
+        console.error('toggleSkill error:', e);
+      }
     }
 
-    // Playground account selector & Combo skills state (Default: Combo All 5 Skills)
+    function deleteSkillPrompt(id, name, isBuiltin) {
+      showDestructiveConfirm({
+        title: 'Hapus Skill',
+        subtitle: 'Konfirmasi Penghapusan Permanen',
+        desc: `Skill <strong>${escapeHtml(name)}</strong> (<code>${escapeHtml(id)}</code>) ${isBuiltin ? 'merupakan skill bawaan gateway' : 'adalah custom skill'}. Menghapus skill ini akan menghilangkannya secara permanen dari daftar prompt injection dan selector.`,
+        verifyText: name,
+        verifyLabel: `Ketik nama skill <strong>${escapeHtml(name)}</strong> untuk mengonfirmasi:`,
+        onConfirm: async () => {
+          try {
+            const res = await fetch(`/api/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              alert(err.error || 'Gagal menghapus skill');
+              return;
+            }
+            await fetchSkills();
+          } catch (e) {
+            console.error('deleteSkill error:', e);
+          }
+        }
+      });
+    }
+
+    function resetBuiltinSkills() {
+      showDestructiveConfirm({
+        title: 'Pulihkan Skill Bawaan',
+        subtitle: 'Reset Preset Default',
+        desc: 'Tindakan ini akan memulihkan dan mengaktifkan kembali seluruh Built-in Skills (RTK, Caveman, Ponytail, Context Mode, CodeGraph, Architect, Grill Me) ke konfigurasi bawaan.',
+        verifyText: '',
+        onConfirm: async () => {
+          try {
+            const res = await fetch('/api/skills?action=reset_builtins', { method: 'POST' });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              alert(err.error || 'Gagal memulihkan skill bawaan');
+              return;
+            }
+            await fetchSkills();
+          } catch (e) {
+            console.error('resetBuiltinSkills error:', e);
+          }
+        }
+      });
+    }
+
+    function openCreateSkillModal() {
+      const modal = document.getElementById('createSkillModal');
+      const form = document.getElementById('createSkillForm');
+      if (form) form.reset();
+      if (modal) {
+        modal.classList.add('active');
+        const nameInput = document.getElementById('skillModalName');
+        if (nameInput) nameInput.focus();
+      }
+    }
+
+    function closeCreateSkillModal() {
+      const modal = document.getElementById('createSkillModal');
+      if (modal) modal.classList.remove('active');
+    }
+
+    async function handleCreateSkillSubmit(e) {
+      if (e) e.preventDefault();
+      const name = document.getElementById('skillModalName')?.value?.trim();
+      const description = document.getElementById('skillModalDesc')?.value?.trim() || '';
+      const systemPrompt = document.getElementById('skillModalPrompt')?.value?.trim();
+      const btn = document.getElementById('btnSaveSkill');
+
+      if (!name || !systemPrompt) {
+        alert('Nama Skill dan System Prompt wajib diisi.');
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Menyimpan...';
+      }
+
+      try {
+        const res = await fetch('/api/skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, systemPrompt, enabled: true }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.error || 'Gagal menyimpan skill');
+          return;
+        }
+
+        closeCreateSkillModal();
+        await fetchSkills();
+      } catch (err) {
+        console.error('handleCreateSkillSubmit error:', err);
+        alert('Terjadi kesalahan saat menyimpan skill');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<svg class="w-3.5 h-3.5"><use href="#icon-check"></use></svg> Simpan Skill`;
+        }
+      }
+    }
+
+    // Playground account selector & Combo skills state (Default: Combo All Active Skills)
     let selectedComboSkills = new Set(['rtk', 'caveman', 'ponytail', 'context_mode', 'codegraph']);
 
     function selectAllComboSkills() {
-      selectedComboSkills = new Set(['rtk', 'caveman', 'ponytail', 'context_mode', 'codegraph']);
+      const activeSkills = skillsData.length > 0
+        ? skillsData.filter(sk => sk.enabled)
+        : [
+            { id: 'rtk' }, { id: 'caveman' }, { id: 'ponytail' }, { id: 'context_mode' }, { id: 'codegraph' }
+          ];
+      selectedComboSkills = new Set(activeSkills.map(s => s.id.toLowerCase()));
       renderComboSkillsPills();
     }
 
@@ -1153,28 +1440,37 @@ let currentTab = 'dashboard';
       if (!container) return;
 
       const defaultSkills = [
-        { id: 'grill-me', name: 'Grill Me', desc: 'Autonomous Prompt Architect & Interview' },
-        { id: 'rtk', name: 'RTK', desc: 'Real-Time Knowledge & Reasoning' },
-        { id: 'context_mode', name: 'Context Mode', desc: 'Context Engineering' },
-        { id: 'codegraph', name: 'CodeGraph', desc: 'Symbol & Dependency Knowledge' },
-        { id: 'caveman', name: 'Caveman', desc: 'Terse & No Fluff' },
-        { id: 'ponytail', name: 'Ponytail', desc: 'Lazy Senior Dev' },
-        { id: 'architect', name: 'Architect', desc: 'Software Architect' },
+        { id: 'grill-me', name: 'Grill Me', desc: 'Autonomous Prompt Architect & Interview', enabled: true },
+        { id: 'rtk', name: 'RTK', desc: 'Real-Time Knowledge & Reasoning', enabled: true },
+        { id: 'context_mode', name: 'Context Mode', desc: 'Context Engineering', enabled: true },
+        { id: 'codegraph', name: 'CodeGraph', desc: 'Symbol & Dependency Knowledge', enabled: true },
+        { id: 'caveman', name: 'Caveman', desc: 'Terse & No Fluff', enabled: true },
+        { id: 'ponytail', name: 'Ponytail', desc: 'Lazy Senior Dev', enabled: true },
+        { id: 'architect', name: 'Architect', desc: 'Software Architect', enabled: true },
       ];
 
-      const allSkills = [...defaultSkills];
-      skillsData.forEach(sk => {
-        if (!allSkills.some(s => s.id.toLowerCase() === sk.id.toLowerCase())) {
-          allSkills.push({ id: sk.id, name: sk.name, desc: sk.description });
-        }
-      });
+      // Use active skills from skillsData if loaded, otherwise fallback to default active list
+      let activeSkills = [];
+      if (skillsData.length > 0) {
+        activeSkills = skillsData.filter(sk => sk.enabled);
+      } else {
+        activeSkills = defaultSkills;
+      }
 
-      container.innerHTML = allSkills.map(sk => {
+      // Automatically prune inactive or deleted skills from the user selection
+      const activeIdSet = new Set(activeSkills.map(s => s.id.toLowerCase()));
+      for (const id of Array.from(selectedComboSkills)) {
+        if (!activeIdSet.has(id)) {
+          selectedComboSkills.delete(id);
+        }
+      }
+
+      container.innerHTML = activeSkills.map(sk => {
         const isChecked = selectedComboSkills.has(sk.id.toLowerCase());
         return `
           <div class="skill-pill ${isChecked ? 'active' : ''}" onclick="toggleComboSkill('${sk.id.toLowerCase()}')">
             <span>${isChecked ? svgIcon('check', 'icon-sm') : svgIcon('plus', 'icon-sm')}</span>
-            <span>${sk.name}</span>
+            <span>${escapeHtml(sk.name)}</span>
           </div>
         `;
       }).join('');
@@ -1238,12 +1534,15 @@ let currentTab = 'dashboard';
       const targetAccount = document.getElementById('pgAccount')?.value || '';
       const skillsArray = Array.from(selectedComboSkills);
 
+      userScrolledUpInPlayground = false;
       playgroundHistory.push({ role: 'user', content: text });
-      renderPlaygroundMessages();
+      renderPlaygroundMessages(true);
 
       const statusEl = document.getElementById('pgStatus');
-      statusEl.textContent = 'Generating...';
-      statusEl.className = 'badge badge-warning';
+      if (statusEl) {
+        statusEl.textContent = 'Generating...';
+        statusEl.className = 'badge badge-warning';
+      }
 
       playgroundAbortController = new AbortController();
       updatePlaygroundButtonState(true);
@@ -1290,6 +1589,7 @@ let currentTab = 'dashboard';
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
 
+          let hasNewContent = false;
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               const dataStr = line.slice(6).trim();
@@ -1297,32 +1597,51 @@ let currentTab = 'dashboard';
               try {
                 const chunk = JSON.parse(dataStr);
                 const delta = chunk.choices?.[0]?.delta?.content || '';
-                assistantTurn.content += delta;
-                renderPlaygroundMessages();
-              } catch {}
+                if (delta) {
+                  assistantTurn.content += delta;
+                  hasNewContent = true;
+                }
+              } catch (e) {
+                console.warn('SSE Chunk parse error:', e);
+              }
             }
           }
+          if (hasNewContent) {
+            renderPlaygroundMessages();
+          }
         }
+        // Pastikan render akhir dipanggil saat streaming selesai ([DONE])
       } catch (err) {
+        console.error('Playground fetch error:', err);
         if (err.name === 'AbortError') {
           assistantTurn.content += '\n\n*(Generasi dihentikan oleh pengguna)*';
         } else {
           assistantTurn.content = 'Network Error: ' + err.message;
         }
-        renderPlaygroundMessages();
       } finally {
         playgroundAbortController = null;
         updatePlaygroundButtonState(false);
-        statusEl.textContent = 'Ready';
-        statusEl.className = 'badge badge-success';
+        const statusEl = document.getElementById('pgStatus');
+        if (statusEl) {
+          statusEl.textContent = 'Ready';
+          statusEl.className = 'badge badge-success';
+        }
+        // Panggil render final SETELAH playgroundAbortController di-set ke null
+        renderPlaygroundMessages();
       }
     }
 
-    function formatChatContent(content) {
-      if (!content) return '';
+    function formatChatContent(content, isStreaming = false) {
+      if (!content) {
+        return isStreaming ? '<span class="inline-flex items-center gap-1.5 text-xs text-slate-400 italic"><span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> Sedang mengetik...</span>' : '';
+      }
 
       // Check if message is an Interrogation / Grill-me format
       if (content.includes('❓') || content.includes('INTERROGATION') || content.includes('Q1')) {
+        // Jika sedang streaming dan belum selesai menerima respons penuh, tampilkan preview teks rapi dulu
+        if (isStreaming) {
+          return cleanGrillMarkdown(content).replace(/\n/g, '<br/>') + ' <span class="inline-block w-1.5 h-3.5 bg-blue-500 animate-pulse align-middle ml-1"></span>';
+        }
         return renderInteractiveGrillMe(content);
       }
 
@@ -1349,7 +1668,19 @@ let currentTab = 'dashboard';
     }
 
     // Interactive Interrogation Form parser (Antigravity Style)
+    function cleanGrillMarkdown(text) {
+      if (!text) return '';
+      return text
+        .replace(/\*\*([^*]+)\*\*/g, '$1') // Buang bold **text** -> text
+        .replace(/\*([^*]+)\*/g, '$1')     // Buang italic *text* -> text
+        .replace(/`([^`]+)`/g, '$1')       // Buang backticks `code` -> code
+        .replace(/\*\*/g, '')              // Buang sisa asterisks ganda yang tidak berpasangan
+        .replace(/\*/g, '')                // Buang sisa asterisks tunggal
+        .trim();
+    }
+
     function renderInteractiveGrillMe(rawText) {
+      console.log('[Grill-Me] renderInteractiveGrillMe called with text length:', rawText?.length);
       // Split into sections by question marker
       const lines = rawText.split('\n');
       const questions = [];
@@ -1358,29 +1689,48 @@ let currentTab = 'dashboard';
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (line.match(/^(\?|❓|\#\#\s*Q|\*\*Q\d+)/i) || line.includes('**Q') || line.startsWith('Q1') || line.startsWith('Q2') || line.startsWith('Q3') || line.startsWith('Q4') || line.startsWith('Q5')) {
+        // Lewati garis horizontal pemisah markdown
+        if (line === '---' || line === '***' || line === '___') {
+          continue;
+        }
+
+        // Deteksi judul pertanyaan fleksibel: diawali '❓', '?', '## Q', 'Q1', dsb.
+        const isQLine = /(?:❓|\?|\bQ\d+[:\s\-]|\*\*Q\d+)/i.test(line);
+        if (isQLine && !/^[-*•\d.]*\s*\[[A-Z]\]/i.test(line)) {
           if (currentQ) questions.push(currentQ);
+          const rawTitle = line.replace(/^[❓\?\*#\s\d.-]+/g, '');
+          const cleanedTitle = cleanGrillMarkdown(rawTitle);
+          const isMulti = /multi|ganda|pilih lebih dari satu|kombinasi/i.test(cleanedTitle);
           currentQ = {
-            title: line.replace(/^[❓\?\*#\s-]+/g, '').replace(/\*+/g, ''),
+            title: cleanedTitle,
+            isMulti: isMulti,
             options: [],
             recommendation: ''
           };
         } else if (currentQ) {
-          const optMatch = line.match(/^[-*]?\s*\[?([A-E])\]?\s*[:-]?\s*(.*)/i);
+          // Hanya tangkap baris yang diawali bullet/angka dan tanda kurung siku [A-Z] eksplisit (misal: - [A] Pilihan, [B] Pilihan)
+          // Mencegah kata seperti "Berapa" di awal kalimat tertangkap sebagai opsi
+          const optMatch = line.match(/^[-*•\d.]*\s*\[([A-Z])\]\s*[:-]?\s*(.*)/i);
           if (optMatch) {
+            const rawOptText = cleanGrillMarkdown(optMatch[2]);
+            const isWriteIn = /write[- ]?in|tentukan sendiri|isi sendiri|spesifikasi kustom/i.test(rawOptText);
             currentQ.options.push({
               key: optMatch[1].toUpperCase(),
-              text: optMatch[2]
+              text: rawOptText,
+              isWriteIn: isWriteIn
             });
           } else if (line.includes('➡️') || line.toLowerCase().includes('rekomendasi')) {
-            currentQ.recommendation = line;
+            currentQ.recommendation = cleanGrillMarkdown(line.replace(/^[➡️\s*#-]+/, ''));
+          } else if (currentQ.options.length === 0 && line.length > 0 && !line.startsWith('---')) {
+            currentQ.title += ' ' + cleanGrillMarkdown(line);
           }
-        } else {
-          if (line) headerLines.push(line);
+        } else if (line.length > 0 && !line.startsWith('---') && !line.startsWith('```')) {
+          headerLines.push(cleanGrillMarkdown(line));
         }
       }
       if (currentQ) questions.push(currentQ);
 
+      console.log('[Grill-Me] Parsed questions count:', questions.length);
       // If parser failed to find structured questions, fallback to linebreaks
       if (questions.length === 0) {
         return rawText.replace(/\n/g, '<br/>');
@@ -1407,53 +1757,91 @@ let currentTab = 'dashboard';
 
       questions.forEach((q, qIdx) => {
         const qName = `q_${qIdx}`;
-        // Determine recommended option key
-        let recKey = '';
+        // Ambil semua kunci rekomendasi (bisa single 'C' atau kombinasi 'A', 'D' pada rekomendasi: "[A] + [D]")
+        const recKeys = new Set();
         if (q.recommendation) {
-          const m = q.recommendation.match(/\[?([A-E])\]?/i);
-          if (m) recKey = m[1].toUpperCase();
+          const matches = q.recommendation.matchAll(/\[([A-Z])\]/gi);
+          for (const m of matches) {
+            recKeys.add(m[1].toUpperCase());
+          }
+          if (recKeys.size === 0) {
+            const fallbackMatch = q.recommendation.match(/\b([A-Z])\b/g);
+            if (fallbackMatch) {
+              fallbackMatch.forEach(k => recKeys.add(k.toUpperCase()));
+            }
+          }
         }
+
+        // Cek juga apakah teks opsi itu sendiri memuat kata "(Rekomendasi)"
+        q.options.forEach(opt => {
+          if (/rekomendasi/i.test(opt.text)) {
+            recKeys.add(opt.key);
+          }
+        });
+
+        // Wajib setidaknya 1 rekomendasi: jika AI tidak memberikan rekomendasi sama sekali, default ke opsi pertama [A]
+        if (recKeys.size === 0 && q.options.length > 0) {
+          recKeys.add(q.options[0].key);
+        }
+
+        // Jika rekomendasi memuat lebih dari 1 opsi atau judul mengandung multi-select, gunakan checkbox
+        const isMultiChoice = q.isMulti || recKeys.size > 1;
+        const inputType = isMultiChoice ? 'checkbox' : 'radio';
 
         html += `
           <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col gap-2.5">
-            <div class="font-bold text-xs text-slate-900 leading-snug">
-              ${qIdx + 1}. ${escapeHtml(q.title)}
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div class="font-bold text-xs text-slate-900 leading-snug">
+                ${qIdx + 1}. ${escapeHtml(q.title)}
+              </div>
+              ${isMultiChoice ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Multi-Select</span>' : ''}
             </div>
             <div class="flex flex-col gap-2">
         `;
 
+        const hasCustomWriteIn = q.options.some(opt => opt.isWriteIn);
+
         q.options.forEach(opt => {
-          const isRec = opt.key === recKey;
-          const isChecked = isRec; // Pre-select recommended option
+          const isRec = recKeys.has(opt.key);
+          const isChecked = isRec;
+          // Bersihkan kata "(Rekomendasi)" dari label jika sudah ada di teks opsi agar rapi dengan badge
+          const cleanOptText = opt.text.replace(/\(?rekomendasi\)?/gi, '').trim();
+
           html += `
-            <label class="group flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${isChecked ? 'border-blue-400 bg-blue-50/70' : 'border-slate-200 bg-white hover:border-blue-300'}" data-grill-opt="true">
-              <input type="radio" name="${qName}" value="${opt.key}: ${escapeHtml(opt.text)}" class="mt-0.5 text-blue-600 focus:ring-blue-500" ${isChecked ? 'checked' : ''} onchange="handleGrillOptionChange(this)" />
-              <div class="flex-1 text-xs text-slate-700 leading-relaxed">
-                <span class="font-extrabold text-blue-700 mr-1">[${opt.key}]</span>
-                <span>${escapeHtml(opt.text)}</span>
-                ${isRec ? '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700">Rekomendasi</span>' : ''}
+            <label class="group flex flex-col p-2.5 rounded-lg border transition-all cursor-pointer ${isChecked ? 'border-blue-400 bg-blue-50/70' : 'border-slate-200 bg-white hover:border-blue-300'}" data-grill-opt="true">
+              <div class="flex items-start gap-2.5">
+                <input type="${inputType}" name="${qName}${isMultiChoice ? '[]' : ''}" value="[${opt.key}] ${escapeHtml(cleanOptText || opt.text)}" class="mt-0.5 text-blue-600 focus:ring-blue-500 rounded-${isMultiChoice ? 'md' : 'full'}" ${isChecked ? 'checked' : ''} onchange="handleGrillOptionChange(this)" />
+                <div class="flex-1 text-xs text-slate-700 leading-relaxed">
+                  <span class="font-extrabold text-blue-700 mr-1">[${opt.key}]</span>
+                  <span>${escapeHtml(cleanOptText || opt.text)}</span>
+                  ${isRec ? '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700">Rekomendasi</span>' : ''}
+                </div>
               </div>
+              ${opt.isWriteIn ? `
+                <div class="mt-2 pl-6">
+                  <input type="text" placeholder="Ketik spesifikasi kustom Anda di sini..." class="w-full text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" oninput="handleGrillCustomInput(this)" onclick="event.stopPropagation()" />
+                </div>
+              ` : ''}
             </label>
           `;
         });
 
-        // Add Custom Write-In Option
-        html += `
-            <label class="group flex items-start gap-2.5 p-2 rounded-lg border border-slate-200 bg-white hover:border-blue-300 transition-all cursor-pointer" data-grill-opt="true">
-              <input type="radio" name="${qName}" value="__CUSTOM__" class="mt-0.5 text-blue-600 focus:ring-blue-500" onchange="handleGrillOptionChange(this)" />
-              <div class="flex-1 text-xs text-slate-700 leading-relaxed">
-                <span class="font-extrabold text-purple-700 mr-1">[Custom]</span>
-                <span class="text-slate-500 italic">Tulis spesifikasi/pilihan sendiri (write-in):</span>
-                <input type="text" class="chat-input text-xs w-full px-3 py-1.5 mt-1.5 rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="Tulis preferensi Anda di sini..." oninput="handleGrillCustomInput(this)" />
+        // HANYA tambahkan Opsi Write-In jika pertanyaan BELUM memuat opsi write-in
+        if (!hasCustomWriteIn) {
+          const customKey = String.fromCharCode(65 + q.options.length);
+          html += `
+            <label class="group flex flex-col p-2.5 rounded-lg border border-slate-200 bg-white hover:border-blue-300 transition-all cursor-pointer" data-grill-opt="true">
+              <div class="flex items-start gap-2.5">
+                <input type="${inputType}" name="${qName}${isMultiChoice ? '[]' : ''}" value="[${customKey}] Kustom" class="mt-0.5 text-blue-600 focus:ring-blue-500 rounded-${isMultiChoice ? 'md' : 'full'}" onchange="handleGrillOptionChange(this)" />
+                <div class="flex-1 text-xs text-slate-700 leading-relaxed">
+                  <span class="font-extrabold text-slate-500 mr-1">[${customKey}]</span>
+                  <span class="font-semibold text-slate-700">Tentukan Sendiri (Custom Write-in)</span>
+                </div>
+              </div>
+              <div class="mt-2 pl-6">
+                <input type="text" placeholder="Ketik spesifikasi kustom Anda di sini..." class="w-full text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" oninput="handleGrillCustomInput(this)" onclick="event.stopPropagation()" />
               </div>
             </label>
-        `;
-
-        if (q.recommendation) {
-          html += `
-            <div class="text-[11px] text-slate-500 italic bg-white/80 p-2 rounded-md border border-slate-200/50 flex items-center gap-1.5 mt-1">
-              <span>💡</span> <span>${escapeHtml(q.recommendation)}</span>
-            </div>
           `;
         }
 
@@ -1465,8 +1853,8 @@ let currentTab = 'dashboard';
 
       html += `
           </form>
-          <div class="flex gap-3 items-center justify-end mt-4 pt-3 border-t border-slate-100">
-            <button class="btn btn-primary px-5 py-2 text-xs font-bold shadow-xs flex items-center gap-2" onclick="submitGrillAnswers('${qFormId}')">
+          <div class="flex justify-end pt-3 mt-2 border-t border-slate-100">
+            <button class="btn btn-sm btn-primary text-xs px-4 py-2 shadow-xs flex items-center gap-2" onclick="submitGrillAnswers('${qFormId}')">
               ${svgIcon('play', 'icon-sm')} Kirim Pilihan &amp; Generate Master Prompt
             </button>
           </div>
@@ -1476,15 +1864,15 @@ let currentTab = 'dashboard';
       return html;
     }
 
-    function handleGrillOptionChange(radioEl) {
-      const parentForm = radioEl.closest('form');
+    function handleGrillOptionChange(inputEl) {
+      const parentForm = inputEl.closest('form');
       if (!parentForm) return;
-      const qGroup = radioEl.closest('.flex.flex-col.gap-2');
+      const qGroup = inputEl.closest('.flex.flex-col.gap-2');
       if (!qGroup) return;
 
       qGroup.querySelectorAll('label[data-grill-opt="true"]').forEach(lbl => {
-        const input = lbl.querySelector('input[type="radio"]');
-        if (input && input.checked) {
+        const inp = lbl.querySelector('input[type="radio"], input[type="checkbox"]');
+        if (inp && inp.checked) {
           lbl.classList.remove('border-slate-200', 'bg-white');
           lbl.classList.add('border-blue-400', 'bg-blue-50/70');
         } else {
@@ -1495,11 +1883,15 @@ let currentTab = 'dashboard';
     }
 
     function handleGrillCustomInput(inputEl) {
-      const radio = inputEl.closest('label').querySelector('input[type="radio"]');
-      if (radio) {
-        radio.checked = true;
-        radio.value = 'Custom: ' + inputEl.value;
-        handleGrillOptionChange(radio);
+      const parentLabel = inputEl.closest('label');
+      if (!parentLabel) return;
+      const input = parentLabel.querySelector('input[type="radio"], input[type="checkbox"]');
+      if (input) {
+        input.checked = true;
+        const matchKey = input.value.match(/^\[([A-Z])\]/);
+        const prefix = matchKey ? matchKey[0] : '[Custom]';
+        input.value = `${prefix} Custom: ${inputEl.value.trim()}`;
+        handleGrillOptionChange(input);
       }
     }
 
@@ -1508,13 +1900,15 @@ let currentTab = 'dashboard';
       if (!form) return;
       const cards = form.querySelectorAll('.p-3\\.5');
       cards.forEach(card => {
-        const recBadge = card.querySelector('.bg-indigo-100');
-        if (recBadge) {
-          const radio = recBadge.closest('label').querySelector('input[type="radio"]');
-          if (radio) {
-            radio.checked = true;
-            handleGrillOptionChange(radio);
-          }
+        const recBadges = card.querySelectorAll('.bg-indigo-100');
+        if (recBadges.length > 0) {
+          recBadges.forEach(b => {
+            const inp = b.closest('label').querySelector('input[type="radio"], input[type="checkbox"]');
+            if (inp) {
+              inp.checked = true;
+              handleGrillOptionChange(inp);
+            }
+          });
         }
       });
     }
@@ -1523,12 +1917,22 @@ let currentTab = 'dashboard';
       const form = document.getElementById(formId);
       if (!form) return;
       const formData = new FormData(form);
+      const answersMap = new Map();
+
+      for (const [key, val] of formData.entries()) {
+        const cleanKey = key.replace('[]', '');
+        if (!answersMap.has(cleanKey)) {
+          answersMap.set(cleanKey, []);
+        }
+        answersMap.get(cleanKey).push(val);
+      }
+
       const answers = [];
       let idx = 1;
-      for (const [key, val] of formData.entries()) {
-        answers.push(`Q${idx}: ${val}`);
+      answersMap.forEach((vals) => {
+        answers.push(`Q${idx}: ${vals.join(', ')}`);
         idx++;
-      }
+      });
 
       const input = document.getElementById('pgInput');
       if (input) {
@@ -1561,9 +1965,26 @@ let currentTab = 'dashboard';
       URL.revokeObjectURL(url);
     }
 
-    function renderPlaygroundMessages() {
+    let userScrolledUpInPlayground = false;
+
+    function initPlaygroundScrollListener() {
+      const el = document.getElementById('pgMessages');
+      if (!el || el._hasScrollListener) return;
+      el._hasScrollListener = true;
+      el.addEventListener('scroll', () => {
+        // Toleransi 60px dari dasar chat
+        const isNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) <= 60;
+        userScrolledUpInPlayground = !isNearBottom;
+      }, { passive: true });
+    }
+
+    function renderPlaygroundMessages(forceScroll = false) {
       const el = document.getElementById('pgMessages');
       if (!el) return;
+      initPlaygroundScrollListener();
+
+      const wasAtBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) <= 60;
+
       el.innerHTML = playgroundHistory.map((m, idx) => `
         <div class="flex flex-col w-full mb-3.5 ${m.role === 'user' ? 'items-end' : 'items-start'}">
           <div class="flex items-center justify-between ${m.role === 'user' ? 'max-w-[82%]' : 'w-full'} mb-1 px-1">
@@ -1582,11 +2003,16 @@ let currentTab = 'dashboard';
             ` : ''}
           </div>
           <div class="chat-bubble ${m.role} w-full ${m.role === 'user' ? 'max-w-[82%]' : 'max-w-full'}">
-            ${m.role === 'assistant' ? formatChatContent(m.content) : m.content.replace(/\n/g, '<br/>')}
+            ${m.role === 'assistant' ? formatChatContent(m.content, !!playgroundAbortController && idx === playgroundHistory.length - 1) : m.content.replace(/\n/g, '<br/>')}
           </div>
         </div>
       `).join('');
-      el.scrollTop = el.scrollHeight;
+
+      // Hanya auto-scroll jika diminta secara paksa (misal user kirim pesan baru)
+      // atau jika user sedang berada di posisi paling bawah (belum sengaja scroll ke atas)
+      if (forceScroll || (!userScrolledUpInPlayground && wasAtBottom)) {
+        el.scrollTop = el.scrollHeight;
+      }
     }
     function clearPlayground() {
       playgroundHistory = [];
@@ -1968,15 +2394,10 @@ let currentTab = 'dashboard';
         }
       }
 
+      // Populate fallback model datalist
       const datalist = document.getElementById('fallbackModelOptions');
       if (datalist && fallbackAvailableModels && fallbackAvailableModels.length > 0) {
         datalist.innerHTML = fallbackAvailableModels.map(m => `<option value="${m}">${m}</option>`).join('');
-      }
-
-      // Populate source model datalist / options if exists
-      const srcDatalist = document.getElementById('fallbackSourceModelOptions');
-      if (srcDatalist && fallbackAvailableModels && fallbackAvailableModels.length > 0) {
-        srcDatalist.innerHTML = fallbackAvailableModels.map(m => `<option value="${m}">${m}</option>`).join('');
       }
 
       const container = document.getElementById('fallbackChainsContainer');
@@ -2126,46 +2547,40 @@ let currentTab = 'dashboard';
     function applyFallbackPreset(preset) {
       if (preset === 'safe-flash') {
         fallbackConfig.rules = {
-          "gemini-3.8-flash-tiered": ["gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.6-flash-high"],
-          "gemini-3.8-flash-high": ["gemini-3.8-flash-medium", "gemini-3.7-flash-high", "gemini-3.6-flash-high"],
-          "gemini-3.8-flash-medium": ["gemini-3.8-flash-low", "gemini-3.7-flash-medium", "gemini-3.6-flash-medium"],
-          "gemini-3.7-flash-high": ["gemini-3.8-flash-high", "gemini-3.6-flash-high"],
-          "default": ["gemini-3.8-flash-high", "gemini-3.8-flash-tiered"]
+          "gemini-3.8-flash-tiered": ["claude-sonnet-4-6", "gpt-oss-120b-medium"],
+          "default": ["gemini-3.8-flash-tiered", "claude-sonnet-4-6"]
         };
         fallbackConfig.enabled = true;
-        alert('Preset Aman (Hanya Flash & Tiered - Anti 429) telah dimuat. Klik "Simpan Semua Pengaturan" untuk menyimpan permanen.');
+        alert('Preset Aman (Gemini 3.8 Flash Tiered, Sonnet & OSS) telah dimuat. Klik "Simpan Semua Pengaturan" untuk menyimpan permanen.');
       } else if (preset === 'claude-flash') {
         fallbackConfig.rules = {
-          "claude-sonnet-4-6": ["claude-opus-4-6-thinking", "gemini-3.8-flash-high", "gemini-3.8-flash-tiered"],
-          "claude-opus-4-6-thinking": ["claude-sonnet-4-6", "gemini-3.8-flash-high"],
-          "gemini-3.8-flash-tiered": ["gemini-3.8-flash-high", "gemini-3.7-flash-high"],
-          "default": ["gemini-3.8-flash-high", "gemini-3.8-flash-tiered"]
+          "claude-opus-4-6-thinking": ["claude-sonnet-4-6", "gemini-3.8-flash-tiered"],
+          "claude-sonnet-4-6": ["claude-opus-4-6-thinking", "gemini-3.8-flash-tiered"],
+          "gpt-oss-120b-medium": ["gemini-3.8-flash-tiered", "claude-sonnet-4-6"],
+          "gemini-3.8-flash-tiered": ["claude-sonnet-4-6", "gpt-oss-120b-medium"],
+          "default": ["gemini-3.8-flash-tiered", "claude-sonnet-4-6"]
         };
         fallbackConfig.enabled = true;
-        alert('Preset Claude + Flash telah dimuat. Klik "Simpan Semua Pengaturan" untuk menyimpan.');
+        alert('Preset Claude, Gemini & OSS telah dimuat. Klik "Simpan Semua Pengaturan" untuk menyimpan permanen.');
       } else if (preset === 'reset-default') {
         resetDefaultFallbacks();
-        return;
       }
       renderFallbacksUI();
     }
 
     function resetDefaultFallbacks() {
       showDestructiveConfirm({
-        title: 'Reset Aturan Fallback',
-        subtitle: 'Kembalikan Konfigurasi Rantai Default',
-        desc: 'Seluruh konfigurasi rantai model fallback saat ini akan dikembalikan ke setelan default pabrik (Gemini & Claude failover chains).',
-        verifyText: 'RESET',
-        verifyLabel: 'Ketik <strong>RESET</strong> untuk konfirmasi:',
+        title: 'Reset Fallback Rules',
+        subtitle: 'Kembalikan ke Konfigurasi Default',
+        desc: 'Apakah Anda yakin ingin mereset rantai fallback ke daftar model aktif bawaan (Gemini 3.8 Flash Tiered, Claude Opus Thinking, Claude Sonnet, dan GPT-OSS 120B)?',
+        verifyText: '',
         onConfirm: async () => {
           fallbackConfig.rules = {
-            "gemini-3.8-flash-tiered": ["gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.6-flash-high"],
-            "gemini-3.8-flash-high": ["gemini-3.8-flash-medium", "gemini-3.7-flash-high", "gemini-3.6-flash-high"],
-            "gemini-3.8-flash-medium": ["gemini-3.8-flash-low", "gemini-3.7-flash-medium", "gemini-3.6-flash-medium"],
-            "gemini-3.7-flash-high": ["gemini-3.8-flash-high", "gemini-3.6-flash-high"],
-            "claude-sonnet-4-6": ["claude-opus-4-6-thinking", "gemini-3.8-flash-high", "gemini-3.8-flash-tiered"],
-            "claude-opus-4-6-thinking": ["claude-sonnet-4-6", "gemini-3.8-flash-high"],
-            "default": ["gemini-3.8-flash-high", "gemini-3.8-flash-tiered"]
+            "claude-opus-4-6-thinking": ["claude-sonnet-4-6", "gemini-3.8-flash-tiered"],
+            "claude-sonnet-4-6": ["claude-opus-4-6-thinking", "gemini-3.8-flash-tiered"],
+            "gpt-oss-120b-medium": ["gemini-3.8-flash-tiered", "claude-sonnet-4-6"],
+            "gemini-3.8-flash-tiered": ["claude-sonnet-4-6", "gpt-oss-120b-medium"],
+            "default": ["gemini-3.8-flash-tiered", "claude-sonnet-4-6"]
           };
           fallbackConfig.enabled = true;
           renderFallbacksUI();
@@ -2214,9 +2629,89 @@ let currentTab = 'dashboard';
     }
     window.addEventListener('hashchange', handleHashChange);
 
+    // Window message, BroadcastChannel, and Storage listeners for OAuth completion
+    function handleOAuthSuccessNotification() {
+      alert('Autentikasi Google Berhasil! Akun baru telah terhubung.');
+      fetchAccounts();
+      switchTab('provider');
+      setTimeout(fetchAccounts, 1200);
+      setTimeout(fetchAccounts, 3000);
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+        handleOAuthSuccessNotification();
+      }
+    });
+
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'ag_auth_event') {
+        try {
+          const data = JSON.parse(event.newValue);
+          if (data && data.type === 'GOOGLE_AUTH_SUCCESS') {
+            handleOAuthSuccessNotification();
+          }
+        } catch (e) {}
+      }
+    });
+
+    try {
+      if (window.BroadcastChannel) {
+        const authBC = new BroadcastChannel('ag_auth_channel');
+        authBC.onmessage = (event) => {
+          if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+            handleOAuthSuccessNotification();
+          }
+        };
+      }
+    } catch (e) {}
+
     // Initial boot on DOM readiness to guarantee all partial containers exist
     async function bootApplication() {
-      // 1. Fetch initial background data so all tabs have fresh context
+      // 1. Check for OAuth callback status (?auth=success or ?auth=failed)
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('auth') === 'success') {
+        try {
+          if (window.opener) {
+            window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS' }, '*');
+          }
+        } catch (e) {}
+        try {
+          if (window.BroadcastChannel) {
+            const authBC = new BroadcastChannel('ag_auth_channel');
+            authBC.postMessage({ type: 'GOOGLE_AUTH_SUCCESS' });
+          }
+        } catch (e) {}
+        try {
+          localStorage.setItem('ag_auth_event', JSON.stringify({ type: 'GOOGLE_AUTH_SUCCESS', timestamp: Date.now() }));
+        } catch (e) {}
+
+        if (window.opener || window.name === 'googleLoginPopup') {
+          try {
+            window.close();
+            return;
+          } catch (e) {}
+        }
+
+        window.history.replaceState({}, document.title, window.location.pathname + '#provider');
+        setTimeout(() => {
+          alert('Autentikasi Google Berhasil! Akun baru telah terhubung.');
+          switchTab('provider', false);
+        }, 100);
+      } else if (urlParams.get('auth') === 'failed') {
+        if (window.opener || window.name === 'googleLoginPopup') {
+          try {
+            window.close();
+            return;
+          } catch (e) {}
+        }
+        window.history.replaceState({}, document.title, window.location.pathname + '#provider');
+        setTimeout(() => {
+          alert('Autentikasi Google Gagal! Silakan coba lagi.');
+        }, 100);
+      }
+
+      // 2. Fetch initial background data so all tabs have fresh context
       await fetchAccounts();
       fetchApiKeys();
       fetchSkills();
@@ -2225,7 +2720,7 @@ let currentTab = 'dashboard';
       initInspectorAutoRefresh();
       fetchFallbacks();
 
-      // 2. Resolve initial active tab from URL hash
+      // 3. Resolve initial active tab from URL hash
       handleHashChange();
     }
 
@@ -2246,12 +2741,14 @@ window.clearComboSkills = clearComboSkills;
 window.clearInspectorLogs = clearInspectorLogs;
 window.clearPlayground = clearPlayground;
 window.closeConfirmModal = closeConfirmModal;
+window.closeCreateSkillModal = closeCreateSkillModal;
 window.copyApiKey = copyApiKey;
 window.copyInspectorCurl = copyInspectorCurl;
 window.copyMessageContent = copyMessageContent;
 window.deleteAccount = deleteAccount;
 window.deleteApiKey = deleteApiKey;
 window.deleteFallbackRule = deleteFallbackRule;
+window.deleteSkillPrompt = deleteSkillPrompt;
 window.ensureTabLoaded = ensureTabLoaded;
 window.escapeHtml = escapeHtml;
 window.exportMessageToMarkdown = exportMessageToMarkdown;
@@ -2264,6 +2761,7 @@ window.fetchSkills = fetchSkills;
 window.fetchTokenAnalytics = fetchTokenAnalytics;
 window.formatChatContent = formatChatContent;
 window.formatDateTime = formatDateTime;
+window.handleCreateSkillSubmit = handleCreateSkillSubmit;
 window.handleGrillCustomInput = handleGrillCustomInput;
 window.handleGrillOptionChange = handleGrillOptionChange;
 window.handlePlaygroundAction = handlePlaygroundAction;
@@ -2272,6 +2770,7 @@ window.importFromOmniRoute = importFromOmniRoute;
 window.initInspectorAutoRefresh = initInspectorAutoRefresh;
 window.initUsageAutoRefresh = initUsageAutoRefresh;
 window.loadAnalyticsPartial = loadAnalyticsPartial;
+window.loginGoogle = loginGoogle;
 window.manualRefreshUsage = manualRefreshUsage;
 window.moveAccountOrder = moveAccountOrder;
 window.moveTargetInChain = moveTargetInChain;
@@ -2280,6 +2779,7 @@ window.openCreateKeyModal = openCreateKeyModal;
 window.openCreateSkillModal = openCreateSkillModal;
 window.prevInspectorPage = prevInspectorPage;
 window.refreshAccountQuota = refreshAccountQuota;
+window.refreshAllAccounts = refreshAllAccounts;
 window.removeTargetFromChain = removeTargetFromChain;
 window.renderAnalyticsCharts = renderAnalyticsCharts;
 window.renderComboSkillsPills = renderComboSkillsPills;
@@ -2290,6 +2790,7 @@ window.renderPlaygroundMessages = renderPlaygroundMessages;
 window.renderProvider = renderProvider;
 window.renderUsage = renderUsage;
 window.renderWeeklyModelLimitBox = renderWeeklyModelLimitBox;
+window.resetBuiltinSkills = resetBuiltinSkills;
 window.resetDefaultFallbacks = resetDefaultFallbacks;
 window.saveAllFallbacks = saveAllFallbacks;
 window.saveProviderStrategy = saveProviderStrategy;
@@ -2306,6 +2807,7 @@ window.toggleFallbackEnabled = toggleFallbackEnabled;
 window.toggleKeyVisibility = toggleKeyVisibility;
 window.toggleMobileNav = toggleMobileNav;
 window.toggleProviderAccordion = toggleProviderAccordion;
+window.toggleSkill = toggleSkill;
 window.toggleUsageAutoRefresh = toggleUsageAutoRefresh;
 window.updatePgAccountBadge = updatePgAccountBadge;
 window.updatePgAccountsDropdown = updatePgAccountsDropdown;

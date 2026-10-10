@@ -24,7 +24,7 @@
     }
   </style>
   <!-- Modular Standard Stylesheet -->
-  <link rel="stylesheet" href="./assets/css/style.css">
+  <link rel="stylesheet" href="./assets/css/style.css?v=0.1.1">
 </head>
 <body>
   <div id="svgSpriteContainer" class="hidden"></div>
@@ -50,7 +50,10 @@
         <div class="brand">
           <div class="brand-icon"><img src="./assets/logo.png" alt="Logo" class="w-8 h-8 max-w-[32px] max-h-[32px] object-contain"/></div>
           <div class="brand-text">
-            <h1>Aditya GuY Router</h1>
+            <div class="flex items-center gap-2">
+              <h1>Aditya GuY Router</h1>
+              <span class="badge badge-purple text-[10px] font-mono px-2 py-0.5 rounded-full">v0.1.1</span>
+            </div>
           </div>
         </div>
         <button class="mobile-nav-toggle" id="mobileNavToggle" onclick="toggleMobileNav()">
@@ -196,9 +199,11 @@
             <h3 class="text-lg font-bold text-slate-900">Skills Prompt Injection</h3>
             <p class="text-xs text-slate-500">Preset persona dan penghemat token cerdas (RTK, Caveman, Ponytail, Context Mode).</p>
           </div>
-          <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition shadow-sm self-start sm:self-auto shrink-0" onclick="openCreateSkillModal()">
-            <svg class="w-3.5 h-3.5"><use href="#icon-plus"></use></svg> Tambah Skill
-          </button>
+          <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
+            <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-xs" onclick="openCreateSkillModal()">
+              <svg class="w-3.5 h-3.5"><use href="#icon-plus"></use></svg> Tambah Skill
+            </button>
+          </div>
         </div>
         <div class="card-grid" id="skillsGrid">
           <!-- Dynamic Skills populated by fetchSkills() -->
@@ -259,7 +264,48 @@
     </div>
   </div>
 
-<script src="./assets/js/app.js"></script>
+<script src="./assets/js/app.js?v=0.1.1"></script>
+  <!-- Modal Tambah Skill Baru -->
+  <div id="createSkillModal" class="modal-backdrop">
+    <div class="modal-dialog flex flex-col gap-4 max-w-lg">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+            <svg class="w-4 h-4"><use href="#icon-plus"></use></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-extrabold text-slate-900">Tambah Skill Prompt Baru</h3>
+            <p class="text-xs text-slate-500">Buat preset persona prompt kustom untuk injeksi otomatis.</p>
+          </div>
+        </div>
+        <button class="text-slate-400 hover:text-slate-600 p-1 rounded-md" onclick="closeCreateSkillModal()">
+          <svg class="w-4 h-4"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+
+      <form id="createSkillForm" onsubmit="handleCreateSkillSubmit(event)" class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Nama Skill <span class="text-red-500">*</span></label>
+          <input type="text" id="skillModalName" required placeholder="Contoh: Code Auditor, Security Guard" class="chat-input text-xs w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20" autocomplete="off" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Deskripsi Singkat</label>
+          <input type="text" id="skillModalDesc" placeholder="Deskripsi persona dan fungsi skill ini..." class="chat-input text-xs w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20" autocomplete="off" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">System Prompt Directive <span class="text-red-500">*</span></label>
+          <textarea id="skillModalPrompt" required rows="5" placeholder="Instruksi sistem yang akan diinjeksi ke awal prompt (Markdown / Plain Text)..." class="chat-input text-xs w-full px-3 py-2 rounded-xl bg-slate-900 text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-y leading-relaxed"></textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+          <button type="button" class="btn btn-sm btn-outline" onclick="closeCreateSkillModal()">Batal</button>
+          <button type="submit" id="btnSaveSkill" class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-xs">
+            <svg class="w-3.5 h-3.5"><use href="#icon-check"></use></svg> Simpan Skill
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Two-Step Destructive Confirmation Modal -->
   <div id="confirmModal" class="modal-backdrop">
     <div class="modal-dialog flex flex-col gap-4">

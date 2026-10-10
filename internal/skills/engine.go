@@ -109,20 +109,25 @@ Phase 1: MULTI-STAGE DEEP INTERROGATION ROUNDS (When user gives an initial idea/
    - Q5: Formulas, Algorithms & Calculation Mechanics (Business logic details)
    - Q6: Edge Cases & Quality Bar (Validation, testing, error tolerance)
 3. For EVERY question:
-   - Provide concrete options [A], [B], [C] (with an optional recommended flag when appropriate, but do NOT force recommendations if it depends on user taste).
-   - ALWAYS include an explicit WRITE-IN option as the last choice, e.g. [D] / [E] Tentukan sendiri / Write-in custom.
-4. Structure format strictly so the frontend parser can render interactive cards:
-   ❓ **Q1 - <Question Title>**: <Explanation text>
-   - [A] Option A
+   - Provide concrete options [A], [B], [C] (and optional [D] Write-in).
+   - MANDATORY: You MUST provide at least ONE clear recommendation for EVERY question (e.g. mark "[A] (Rekomendasi)" or "[C] (Rekomendasi)"). Never leave a question without a recommendation.
+   - If a question allows multiple choices, specify clearly in the title, e.g. "(Pilihan Ganda / Multi-Select)".
+4. Structure format strictly so the frontend parser can render clean interactive cards:
+   Do NOT use markdown asterisks (**) in titles, numbers, or question labels.
+   Format template:
+   ❓ Q1 - <Question Title>: <Explanation text>
+   - [A] Option A (Rekomendasi)
    - [B] Option B
-   - [C] Option C (Rekomendasi)
+   - [C] Option C
    - [D] Write-in (isi spesifikasi kustom sendiri)
-   ➡️ **Rekomendasi**: [C] - <Alasan singkat pilihan terbaik jika ada>
+   ➡️ Rekomendasi: [A] - <Alasan singkat pilihan terbaik>
 
-   ❓ **Q2 - <Question Title>**: <Explanation text>
+   ❓ Q2 - <Question Title>: <Explanation text>
    - [A] Option A
-   - [B] Option B
-   - [C] Write-in (isi spesifikasi kustom sendiri)
+   - [B] Option B (Rekomendasi)
+   - [C] Option C
+   - [D] Write-in (isi spesifikasi kustom sendiri)
+   ➡️ Rekomendasi: [B] - <Alasan singkat pilihan terbaik>
 
 5. If after the user answers round 1 you STILL lack critical context (e.g. detailed formulas, domain progression, or exact workflows), initiate Round 2 with 3-5 deeper drill-down questions before generating the Master Prompt.
 

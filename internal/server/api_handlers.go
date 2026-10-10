@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -72,7 +73,42 @@ func (h *ApiHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "<h2>Login Gagal</h2><p>%v</p><a href='/'>Kembali</a>", err)
+		escapedErr := html.EscapeString(err.Error())
+		htmlErr := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Login Gagal</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; color: #0f172a; }
+    .box { text-align: center; background: white; padding: 2rem 2.5rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; max-width: 400px; }
+    h2 { margin: 0 0 0.5rem; font-size: 1.25rem; font-weight: 800; color: #dc2626; }
+    p { margin: 0 0 1.5rem; font-size: 0.875rem; color: #64748b; line-height: 1.5; }
+    .btn { display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; border-radius: 0.5rem; text-decoration: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; border: none; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Login Gagal</h2>
+    <p>%s</p>
+    <button class="btn" onclick="window.close()">Tutup Jendela</button>
+  </div>
+  <script>
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'GOOGLE_AUTH_FAILED', error: '%s' }, '*');
+      }
+    } catch (e) {}
+    try {
+      if (window.BroadcastChannel) {
+        const bc = new BroadcastChannel('ag_auth_channel');
+        bc.postMessage({ type: 'GOOGLE_AUTH_FAILED', error: '%s' });
+      }
+    } catch (e) {}
+  </script>
+</body>
+</html>`, escapedErr, escapedErr, escapedErr)
+		fmt.Fprint(w, htmlErr)
 		return
 	}
 
@@ -99,14 +135,78 @@ func (h *ApiHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) 
 
 	_ = h.storage.UpsertAccount(acc)
 
-	// Fetch initial quotas asynchronously
-	go func() {
-		bgCtx, bgCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer bgCancel()
-		h.pool.FetchAccountQuota(bgCtx, acc)
-	}()
+	// Fetch initial quotas synchronously with a timeout so the weekly limit and reset time are immediately ready
+	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 6*time.Second)
+	h.pool.FetchAccountQuota(fetchCtx, acc)
+	fetchCancel()
 
-	http.Redirect(w, r, "/?auth=success", http.StatusFound)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	escapedEmail := html.EscapeString(email)
+	responseHTML := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Autentikasi Berhasil</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; color: #0f172a; }
+    .box { text-align: center; background: white; padding: 2rem 2.5rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; max-width: 400px; }
+    .icon { width: 48px; height: 48px; margin: 0 auto 1rem; color: #16a34a; }
+    h2 { margin: 0 0 0.5rem; font-size: 1.25rem; font-weight: 800; color: #0f172a; }
+    p { margin: 0 0 1rem; font-size: 0.875rem; color: #64748b; line-height: 1.5; }
+    .btn { display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; border-radius: 0.5rem; text-decoration: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; border: none; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+    </svg>
+    <h2>Autentikasi Berhasil!</h2>
+    <p>Akun <strong>%s</strong> telah terhubung. Jendela ini akan otomatis tertutup...</p>
+    <button class="btn" onclick="window.close()">Tutup Jendela Ini</button>
+  </div>
+  <script>
+    // 1. Broadcast channel
+    try {
+      if (window.BroadcastChannel) {
+        const bc = new BroadcastChannel('ag_auth_channel');
+        bc.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', email: '%s' });
+      }
+    } catch (e) {}
+
+    // 2. Window Opener message
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', email: '%s' }, '*');
+      }
+    } catch (e) {}
+
+    // 3. LocalStorage event fallback
+    try {
+      localStorage.setItem('ag_auth_event', JSON.stringify({ type: 'GOOGLE_AUTH_SUCCESS', timestamp: Date.now() }));
+    } catch (e) {}
+
+    // 4. Tutup jendela popup segera
+    try {
+      window.close();
+    } catch (e) {}
+
+    setTimeout(function() {
+      try {
+        window.close();
+      } catch (e) {}
+      setTimeout(function() {
+        if (!window.closed && !window.opener && window.name !== 'googleLoginPopup') {
+          window.location.href = '/#provider';
+        }
+      }, 800);
+    }, 150);
+  </script>
+</body>
+</html>`, escapedEmail, escapedEmail, escapedEmail)
+	fmt.Fprint(w, responseHTML)
 }
 
 // Accounts API
@@ -400,6 +500,40 @@ func (h *ApiHandler) HandleSkills(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"skills": skills})
 
 	case http.MethodPost:
+		action := r.URL.Query().Get("action")
+		isTogglePath := strings.HasSuffix(r.URL.Path, "/toggle")
+		if action == "toggle" || isTogglePath {
+			id := r.URL.Query().Get("id")
+			if id == "" {
+				var body struct {
+					ID string `json:"id"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				id = body.ID
+			}
+			if id == "" {
+				http.Error(w, `{"error":"parameter id diperlukan"}`, http.StatusBadRequest)
+				return
+			}
+			sk, err := h.storage.ToggleSkill(id)
+			if err != nil {
+				http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "skill": sk})
+			return
+		}
+
+		if action == "reset_builtins" {
+			if err := h.storage.ResetBuiltinSkills(); err != nil {
+				http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+			skills := h.storage.GetSkills()
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "skills": skills})
+			return
+		}
+
 		var sk model.Skill
 		if err := json.NewDecoder(r.Body).Decode(&sk); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -417,11 +551,11 @@ func (h *ApiHandler) HandleSkills(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			http.Error(w, "id parameter required", http.StatusBadRequest)
+			http.Error(w, `{"error":"parameter id diperlukan"}`, http.StatusBadRequest)
 			return
 		}
 		if err := h.storage.DeleteSkill(id); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
@@ -518,17 +652,9 @@ func (h *ApiHandler) HandleFallbacks(w http.ResponseWriter, r *http.Request) {
 		fb := h.storage.GetFallbackConfig()
 		availableModels := []string{
 			"gemini-3.8-flash-tiered",
-			"gemini-3.7-flash-tiered",
-			"claude-sonnet-4-6",
 			"claude-opus-4-6-thinking",
+			"claude-sonnet-4-6",
 			"gpt-oss-120b-medium",
-			"gemini-3.8-flash-high",
-			"gemini-3.8-flash-medium",
-			"gemini-3.8-flash-low",
-			"gemini-3.7-flash-high",
-			"gemini-3.7-flash-medium",
-			"gemini-3.6-flash-high",
-			"gemini-3.6-flash-medium",
 		}
 		resp := map[string]interface{}{
 			"enabled":         fb.Enabled,

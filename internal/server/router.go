@@ -90,7 +90,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rt.api.HandleApiKeys(w, r)
 		return
 	}
-	if p == "/api/skills" {
+	if p == "/api/skills" || p == "/api/skills/toggle" {
 		rt.api.HandleSkills(w, r)
 		return
 	}

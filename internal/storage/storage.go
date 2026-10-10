@@ -138,12 +138,19 @@ func (s *Storage) loadAll() error {
 			s.skills = sk
 		}
 	}
-	// Seed or update built-in skills
+	// Seed or update built-in skills (preserve user's Enabled flag, and do NOT resurrect if user explicitly deleted)
 	for _, b := range skills.GetBuiltinSkills() {
 		existing, exists := s.skills[b.ID]
-		if !exists || existing.IsBuiltin {
-			item := b
-			s.skills[b.ID] = &item
+		if !exists {
+			if len(s.skills) == 0 {
+				item := b
+				s.skills[b.ID] = &item
+			}
+		} else {
+			existing.IsBuiltin = true
+			existing.SystemPrompt = b.SystemPrompt
+			existing.Description = b.Description
+			existing.Name = b.Name
 		}
 	}
 	_ = s.saveSkillsLocked()
@@ -162,13 +169,11 @@ func (s *Storage) loadAll() error {
 		s.fallbacks = &model.FallbackConfig{
 			Enabled: true,
 			Rules: map[string][]string{
-				"gemini-3.8-flash-tiered": {"gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.6-flash-high"},
-				"gemini-3.8-flash-high":   {"gemini-3.8-flash-medium", "gemini-3.7-flash-high", "gemini-3.6-flash-high"},
-				"gemini-3.8-flash-medium": {"gemini-3.8-flash-low", "gemini-3.7-flash-medium", "gemini-3.6-flash-medium"},
-				"gemini-3.7-flash-high":   {"gemini-3.8-flash-high", "gemini-3.6-flash-high"},
-				"claude-sonnet-4-6":       {"claude-opus-4-6-thinking", "gemini-3.8-flash-high", "gemini-3.8-flash-tiered"},
-				"claude-opus-4-6-thinking": {"claude-sonnet-4-6", "gemini-3.8-flash-high"},
-				"default":                 {"gemini-3.8-flash-high", "gemini-3.8-flash-tiered"},
+				"claude-opus-4-6-thinking": {"claude-sonnet-4-6", "gemini-3.8-flash-tiered"},
+				"claude-sonnet-4-6":       {"claude-opus-4-6-thinking", "gemini-3.8-flash-tiered"},
+				"gpt-oss-120b-medium":     {"gemini-3.8-flash-tiered", "claude-sonnet-4-6"},
+				"gemini-3.8-flash-tiered": {"claude-sonnet-4-6", "gpt-oss-120b-medium"},
+				"default":                 {"gemini-3.8-flash-tiered", "claude-sonnet-4-6"},
 			},
 		}
 		_ = s.saveFallbacksLocked()
@@ -331,6 +336,13 @@ func (s *Storage) GetSkills() []*model.Skill {
 	for _, sk := range s.skills {
 		res = append(res, sk)
 	}
+	// Sort predictably: Builtin first, then alphabetical by name
+	sort.Slice(res, func(i, j int) bool {
+		if res[i].IsBuiltin != res[j].IsBuiltin {
+			return res[i].IsBuiltin
+		}
+		return strings.ToLower(res[i].Name) < strings.ToLower(res[j].Name)
+	})
 	return res
 }
 
@@ -338,14 +350,47 @@ func (s *Storage) GetSkill(id string) (*model.Skill, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	sk, exists := s.skills[id]
-	return sk, exists
+	if !exists {
+		return nil, false
+	}
+	return sk, true
+}
+
+func (s *Storage) ToggleSkill(id string) (*model.Skill, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sk, exists := s.skills[id]
+	if !exists {
+		return nil, fmt.Errorf("skill '%s' tidak ditemukan", id)
+	}
+	sk.Enabled = !sk.Enabled
+	if err := s.saveSkillsLocked(); err != nil {
+		return nil, err
+	}
+	return sk, nil
 }
 
 func (s *Storage) UpsertSkill(sk *model.Skill) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if sk.CreatedAt.IsZero() {
-		sk.CreatedAt = time.Now()
+	if existing, exists := s.skills[sk.ID]; exists {
+		if sk.Name == "" {
+			sk.Name = existing.Name
+		}
+		if sk.Description == "" {
+			sk.Description = existing.Description
+		}
+		if sk.SystemPrompt == "" {
+			sk.SystemPrompt = existing.SystemPrompt
+		}
+		sk.IsBuiltin = existing.IsBuiltin
+		if sk.CreatedAt.IsZero() {
+			sk.CreatedAt = existing.CreatedAt
+		}
+	} else {
+		if sk.CreatedAt.IsZero() {
+			sk.CreatedAt = time.Now()
+		}
 	}
 	s.skills[sk.ID] = sk
 	return s.saveSkillsLocked()
@@ -354,10 +399,23 @@ func (s *Storage) UpsertSkill(sk *model.Skill) error {
 func (s *Storage) DeleteSkill(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if sk, ok := s.skills[id]; ok && sk.IsBuiltin {
-		return fmt.Errorf("cannot delete built-in skill")
+	sk, exists := s.skills[id]
+	if !exists {
+		return fmt.Errorf("skill '%s' tidak ditemukan", id)
 	}
+	_ = sk
 	delete(s.skills, id)
+	return s.saveSkillsLocked()
+}
+
+func (s *Storage) ResetBuiltinSkills() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, b := range skills.GetBuiltinSkills() {
+		item := b
+		item.Enabled = true
+		s.skills[b.ID] = &item
+	}
 	return s.saveSkillsLocked()
 }
 

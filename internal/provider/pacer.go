@@ -107,14 +107,16 @@ func GetModelFallbackChain(originalModel string) []string {
 	chain := []string{originalModel}
 
 	switch originalModel {
-	case "claude-sonnet-4-6", "claude-opus-4-6-thinking", "claude-sonnet", "claude-opus", "claude-3-7-sonnet", "claude-3-5-sonnet":
-		chain = append(chain, "gemini-3.8-flash-high", "gemini-3.8-flash-tiered")
-	case "gemini-3.1-pro-high", "gemini-3.1-pro", "gemini-2.5-pro":
-		chain = append(chain, "gemini-3.8-flash-high", "gemini-3.8-flash-tiered")
-	case "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low", "gemini-3.8-flash-tiered":
-		chain = append(chain, "gemini-3.7-flash-high", "gemini-3.6-flash-high")
+	case "claude-sonnet-4-6", "claude-sonnet", "claude-3-7-sonnet", "claude-3-5-sonnet":
+		chain = append(chain, "claude-opus-4-6-thinking", "gemini-3.8-flash-tiered")
+	case "claude-opus-4-6-thinking", "claude-opus":
+		chain = append(chain, "claude-sonnet-4-6", "gemini-3.8-flash-tiered")
+	case "gpt-oss-120b-medium", "gpt-oss":
+		chain = append(chain, "gemini-3.8-flash-tiered", "claude-sonnet-4-6")
+	case "gemini-3.8-flash-tiered", "gemini-3.8-flash", "gemini-flash":
+		chain = append(chain, "claude-sonnet-4-6", "gpt-oss-120b-medium")
 	default:
-		chain = append(chain, "gemini-3.8-flash-high", "gemini-3.8-flash-tiered")
+		chain = append(chain, "gemini-3.8-flash-tiered", "claude-sonnet-4-6")
 	}
 
 	// Remove duplicates while preserving order

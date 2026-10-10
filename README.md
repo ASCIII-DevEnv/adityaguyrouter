@@ -44,13 +44,13 @@ AI Gateway lokal, proxy OpenAI/Anthropic kompatibel, dan dashboard manajemen mul
 Pengguna tidak perlu clone repository atau compile source code. Cukup jalankan image resmi dari GitHub Container Registry (GHCR):
 
 ```bash
-# Menggunakan versi spesifik (misal: agyrouter0.1)
+# Menggunakan versi spesifik (misal: v0.1.1 atau agyrouter0.1.1)
 docker run -d \
   --name antigravity-gateway \
   -p 3456:3456 \
   -v $(pwd)/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/asciii-devenv/adityaguyrouter:agyrouter0.1
+  ghcr.io/asciii-devenv/adityaguyrouter:v0.1.1
 
 # Atau selalu gunakan versi stabil terbaru (latest)
 docker run -d \

@@ -36,8 +36,8 @@ func TestModelFallbackChain(t *testing.T) {
 	if claudeChain[0] != "claude-sonnet-4-6" {
 		t.Fatalf("expected first model to be claude-sonnet-4-6, got %s", claudeChain[0])
 	}
-	if claudeChain[1] != "gemini-3.8-flash-high" {
-		t.Fatalf("expected second model to be gemini-3.8-flash-high, got %s", claudeChain[1])
+	if claudeChain[1] != "claude-opus-4-6-thinking" {
+		t.Fatalf("expected second model to be claude-opus-4-6-thinking, got %s", claudeChain[1])
 	}
 
 	flashChain := GetModelFallbackChain("gemini-3.8-flash-tiered")

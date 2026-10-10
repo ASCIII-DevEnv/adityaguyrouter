@@ -68,13 +68,13 @@ type ApiKey struct {
 
 // Skill represents a prompt enhancement preset (Caveman, Ponytail, etc.)
 type Skill struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	SystemPrompt string   `json:"systemPrompt"`
-	Enabled     bool      `json:"enabled"`
-	IsBuiltin   bool      `json:"isBuiltin"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	SystemPrompt string    `json:"systemPrompt"`
+	Enabled      bool      `json:"enabled"`
+	IsBuiltin    bool      `json:"isBuiltin"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 // ModelInfo represents available models in the gateway

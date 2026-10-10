@@ -542,9 +542,8 @@ func (h *GatewayHandler) HandleMessages(w http.ResponseWriter, r *http.Request) 
 func (h *GatewayHandler) HandleModels(w http.ResponseWriter, r *http.Request) {
 	models := []model.ModelInfo{
 		{ID: "gemini-3.8-flash-tiered", Name: "Gemini 3.8 Flash (Auto Tiered)", Provider: "antigravity", DisplayName: "Gemini 3.8 Flash (Auto Tiered)", Family: "gemini", Description: "Smart choice router between low, medium, and high flash tiers"},
-		{ID: "gemini-3.7-flash-tiered", Name: "Gemini 3.7 Flash (Auto Tiered)", Provider: "antigravity", DisplayName: "Gemini 3.7 Flash (Auto Tiered)", Family: "gemini", Description: "Smart choice router for Gemini 3.7 Flash tiers"},
-		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", Provider: "antigravity", DisplayName: "Claude Sonnet 4.6 (Anthropic)", Family: "claude", Description: "Anthropic balanced coding & reasoning model"},
 		{ID: "claude-opus-4-6-thinking", Name: "Claude Opus 4.6 Thinking", Provider: "antigravity", DisplayName: "Claude Opus 4.6 (Deep Thinking)", Family: "claude", Description: "Deep reasoning thinking model"},
+		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", Provider: "antigravity", DisplayName: "Claude Sonnet 4.6 (Anthropic)", Family: "claude", Description: "Anthropic balanced coding & reasoning model"},
 		{ID: "gpt-oss-120b-medium", Name: "GPT-OSS 120B", Provider: "antigravity", DisplayName: "GPT-OSS 120B (Medium)", Family: "claude", Description: "Open source weights high capacity LLM"},
 	}
 

@@ -61,3 +61,60 @@ func TestRouterClientAuthValidation(t *testing.T) {
 		t.Fatalf("expected application/json content-type")
 	}
 }
+
+func TestSkillsAPIEndpoints(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "skills_api_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		DataDir:        tmpDir,
+		AccountsPath:   filepath.Join(tmpDir, "accounts.json"),
+		ApiKeysPath:    filepath.Join(tmpDir, "api_keys.json"),
+		SkillsPath:     filepath.Join(tmpDir, "skills.json"),
+		TokenUsagePath: filepath.Join(tmpDir, "token_usage.json"),
+	}
+
+	st, err := storage.NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to init storage: %v", err)
+	}
+
+	client := provider.NewAntigravityClient(cfg)
+	pool := provider.NewAccountPool(cfg, st, client)
+	rt := NewRouter(cfg, st, pool, client)
+
+	// 1. GET /api/skills
+	req := httptest.NewRequest("GET", "/api/skills", nil)
+	rec := httptest.NewRecorder()
+	rt.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for GET /api/skills, got %d", rec.Code)
+	}
+
+	// 2. POST /api/skills?action=toggle&id=caveman
+	reqToggle := httptest.NewRequest("POST", "/api/skills?action=toggle&id=caveman", nil)
+	recToggle := httptest.NewRecorder()
+	rt.ServeHTTP(recToggle, reqToggle)
+	if recToggle.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for toggle, got %d: %s", recToggle.Code, recToggle.Body.String())
+	}
+
+	// 3. DELETE /api/skills?id=caveman
+	reqDel := httptest.NewRequest("DELETE", "/api/skills?id=caveman", nil)
+	recDel := httptest.NewRecorder()
+	rt.ServeHTTP(recDel, reqDel)
+	if recDel.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for delete, got %d: %s", recDel.Code, recDel.Body.String())
+	}
+
+	// 4. POST /api/skills?action=reset_builtins
+	reqReset := httptest.NewRequest("POST", "/api/skills?action=reset_builtins", nil)
+	recReset := httptest.NewRecorder()
+	rt.ServeHTTP(recReset, reqReset)
+	if recReset.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for reset, got %d: %s", recReset.Code, recReset.Body.String())
+	}
+}
