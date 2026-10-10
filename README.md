@@ -50,7 +50,7 @@ docker run -d \
   -p 3456:3456 \
   -v $(pwd)/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/elvadsah/adityaguyrouter:agyrouter0.1
+  ghcr.io/asciii-devenv/adityaguyrouter:agyrouter0.1
 
 # Atau selalu gunakan versi stabil terbaru (latest)
 docker run -d \
@@ -58,7 +58,7 @@ docker run -d \
   -p 3456:3456 \
   -v $(pwd)/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/elvadsah/adityaguyrouter:latest
+  ghcr.io/asciii-devenv/adityaguyrouter:latest
 ```
 
 Buka di browser:
@@ -70,7 +70,7 @@ Buka di browser:
 
 1. **Clone Repository**:
    ```bash
-   git clone https://github.com/elvadsah/adityaguyrouter.git
+   git clone https://github.com/ASCIII-DevEnv/adityaguyrouter.git
    cd adityaguyrouter
    ```
 
@@ -89,7 +89,7 @@ Buka di browser:
 
 1. **Clone Repository**:
    ```bash
-   git clone https://github.com/elvadsah/adityaguyrouter.git
+   git clone https://github.com/ASCIII-DevEnv/adityaguyrouter.git
    cd adityaguyrouter
    ```
 
