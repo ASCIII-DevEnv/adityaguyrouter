@@ -1,0 +1,20 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: antigravity-gateway
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    volumes:
+      - ./data:/app/data
+      - ./public:/app/public
+      - ~/.omniroute/data:/root/omniroute/data:ro
+    environment:
+      - PORT=3456
+      - DATA_DIR=/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 32M

@@ -1,0 +1,44 @@
+<!-- TAB: MODEL FALLBACK RULES -->
+<div class="glass-panel">
+  <div class="flex justify-between items-center flex-wrap gap-4 mb-5">
+    <div>
+      <h2 class="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+        <span class="inline-flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-600"><use href="#icon-git-fork"></use></svg> Pengaturan Model Fallback Chain</span>
+      </h2>
+      <p class="text-xs text-slate-500 mt-1">Konfigurasi otomatis jika model upstream utama mengembalikan error kuota (429 / Quota Exceeded), permintaan otomatis dialihkan ke rantai model cadangan.</p>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-sm" onclick="saveAllFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-save"></use></svg> Simpan Semua Pengaturan</button>
+      <button class="btn btn-sm inline-flex items-center gap-1.5" onclick="fetchFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Refresh Aturan</button>
+      <button class="btn btn-sm inline-flex items-center gap-1.5" onclick="resetDefaultFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Reset Default</button>
+    </div>
+  </div>
+
+  <!-- Form Add Rule -->
+  <div class="bg-white/80 border border-slate-200/90 rounded-2xl p-4 mb-6 shadow-xs">
+    <div class="font-bold text-sm mb-2.5 text-slate-900 inline-flex items-center gap-1.5">
+      <svg class="w-3.5 h-3.5 text-blue-600"><use href="#icon-plus"></use></svg> Tambah Aturan Rantai Model Baru
+    </div>
+    <div class="flex gap-2.5 items-center flex-wrap">
+      <div class="flex-1 min-w-[200px]">
+        <label class="text-xs font-bold text-slate-500 block mb-1">Model Utama (From)</label>
+        <input type="text" id="newRuleSourceModel" list="fallbackModelOptions" class="chat-input text-xs w-full px-3 py-2 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="contoh: gemini-3.8-flash-tiered">
+      </div>
+      <div class="flex-[2] min-w-[260px]">
+        <label class="text-xs font-bold text-slate-500 block mb-1">Model Cadangan (To, pisahkan koma berurutan)</label>
+        <input type="text" id="newRuleTargetModels" list="fallbackModelOptions" class="chat-input text-xs w-full px-3 py-2 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="contoh: gemini-3.8-flash-tiered, claude-sonnet-4-6">
+      </div>
+      <datalist id="fallbackModelOptions">
+        <!-- populated dynamically -->
+      </datalist>
+      <div class="self-end flex gap-2">
+        <button class="btn btn-sm btn-primary px-4 py-2 text-xs shadow-xs" onclick="addNewFallbackRule()">+ Tambah Rantai</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Fallback Chains Container -->
+  <div id="fallbackChainsContainer" class="flex flex-col gap-4">
+    <!-- Dynamically rendered fallback chain cards -->
+  </div>
+</div>

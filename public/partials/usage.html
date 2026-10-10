@@ -1,0 +1,23 @@
+<!-- TAB 2: USAGE & QUOTAS -->
+<div class="glass-panel">
+  <div class="flex justify-between items-center mb-4 flex-wrap gap-3">
+    <div>
+      <h2 class="text-lg font-extrabold text-slate-900">Pantauan Sisa Kuota Multi-Akun</h2>
+      <p class="text-xs text-slate-500 mt-0.5">Status kuota 5-jam & mingguan seluruh akun Google Antigravity</p>
+    </div>
+    <div class="flex gap-2 items-center">
+      <div class="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold shadow-xs">
+        <span id="usageCountdownBadge" class="text-blue-600 inline-flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Auto-refresh: 30s
+        </span>
+        <button id="usagePauseBtn" class="btn btn-sm px-2 py-0.5 text-[11px]" onclick="toggleUsageAutoRefresh()">Pause</button>
+      </div>
+      <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-xs" onclick="fetchAccounts()">
+        <svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Refresh Sekarang
+      </button>
+    </div>
+  </div>
+  <div class="card-grid" id="usageAccountsGrid">
+    <!-- Dynamic Account Quota Cards -->
+  </div>
+</div>

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aditya GuY Router</title>
+  <link rel="icon" type="image/png" href="./assets/logo.png">
+  <link rel="shortcut icon" type="image/png" href="./assets/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Tailwind CSS v4 Engine -->
+  <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-primary: #2563eb;
+      --color-primary-hover: #1d4ed8;
+      --color-accent: #7c3aed;
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+      --shadow-float: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+    }
+  </style>
+  <!-- Modular Standard Stylesheet -->
+  <link rel="stylesheet" href="./assets/css/style.css">
+</head>
+<body>
+  <div id="svgSpriteContainer" class="hidden"></div>
+  <script>
+    (async function loadSvgSprite() {
+      try {
+        const res = await fetch('./assets/icons.svg');
+        if (res.ok) {
+          const svgText = await res.text();
+          const container = document.getElementById('svgSpriteContainer');
+          if (container) container.innerHTML = svgText;
+        }
+      } catch (e) {
+        console.error('Failed to load icons.svg sprite:', e);
+      }
+    })();
+  </script>
+
+  <div class="container">
+    <!-- Header -->
+    <header class="glass-panel header">
+      <div class="header-top">
+        <div class="brand">
+          <div class="brand-icon"><img src="./assets/logo.png" alt="Logo" class="w-8 h-8 max-w-[32px] max-h-[32px] object-contain"/></div>
+          <div class="brand-text">
+            <h1>Aditya GuY Router</h1>
+          </div>
+        </div>
+        <button class="mobile-nav-toggle" id="mobileNavToggle" onclick="toggleMobileNav()">
+          <svg class="icon"><use href="#icon-menu"></use></svg>
+          <span id="mobileNavLabel">Menu</span>
+        </button>
+      </div>
+      <div class="nav-tabs" id="mainNavTabs">
+        <button class="nav-tab active" onclick="switchTab('dashboard')"><svg class="icon"><use href="#icon-home"></use></svg> Home</button>
+        <button class="nav-tab" onclick="switchTab('analytics')"><svg class="icon"><use href="#icon-trending-up"></use></svg> Token Analytics</button>
+        <button class="nav-tab" onclick="switchTab('usage')"><svg class="icon"><use href="#icon-bar-chart"></use></svg> Usage</button>
+        <button class="nav-tab" onclick="switchTab('provider')"><svg class="icon"><use href="#icon-cloud"></use></svg> Provider</button>
+        <button class="nav-tab" onclick="switchTab('fallbacks')"><svg class="icon"><use href="#icon-git-fork"></use></svg> Fallbacks</button>
+        <button class="nav-tab" onclick="switchTab('inspector')"><svg class="icon"><use href="#icon-radio"></use></svg> Inspector</button>
+        <button class="nav-tab" onclick="switchTab('playground')"><svg class="icon"><use href="#icon-gamepad"></use></svg> Playground</button>
+      </div>
+    </header>
+
+    <!-- TAB 1: DASHBOARD (HOME TERPADU) -->
+    <!-- TAB 1: DASHBOARD (HOME BENTO GRID) -->
+    <div id="tab-dashboard" class="tab-content active space-y-6">
+
+      <!-- Bento Metric Cards (4 Cols) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1 -->
+        <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-500 mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-blue-500"><use href="#icon-cloud"></use></svg> Total Akun
+            </span>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Multi-Account</span>
+          </div>
+          <div>
+            <div class="text-3xl font-black text-slate-900 tracking-tight" id="statTotalAccounts">0</div>
+            <p class="text-xs text-slate-500 mt-1">Terhubung ke Google Code Companion</p>
+          </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-500 mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-emerald-500"><use href="#icon-check"></use></svg> Akun Sehat
+            </span>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Ready</span>
+          </div>
+          <div>
+            <div class="text-3xl font-black text-emerald-600 tracking-tight" id="statActiveAccounts">0</div>
+            <p class="text-xs text-slate-500 mt-1">Siap melayani failover & load balancer</p>
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-500 mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-indigo-500"><use href="#icon-zap"></use></svg> Gateway Endpoint
+            </span>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">HTTP/1.1</span>
+          </div>
+          <div>
+            <div class="text-2xl font-black font-mono text-blue-600 tracking-tight">:3456/v1</div>
+            <p class="text-xs text-slate-500 mt-1">OpenAI & Anthropic Wire Protocol</p>
+          </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-500 mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-purple-500"><use href="#icon-cpu"></use></svg> Model Engine
+            </span>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">Tier 1</span>
+          </div>
+          <div>
+            <div class="text-xl font-extrabold text-slate-800 tracking-tight truncate">Gemini &amp; Claude</div>
+            <p class="text-xs text-slate-500 mt-1">Failover otomatis ke Flash / Sonnet</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bento Row 1: API Keys (Left 2 Cols) & Webhook Alert (Right 1 Col) with Equal Heights -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+
+        <!-- Left 2 Cols: API Keys Bento Card -->
+        <div class="lg:col-span-2">
+          <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-6 shadow-card space-y-5 h-full flex flex-col justify-between" id="section-apikeys">
+            <div>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Manajemen API Keys</h3>
+                  <p class="text-xs text-slate-500">Kunci rahasia untuk mengautentikasi AI Gateway dari aplikasi, IDE, dan agent CLI.</p>
+                </div>
+                <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm self-start sm:self-auto shrink-0" onclick="openCreateKeyModal()">
+                  <svg class="w-3.5 h-3.5"><use href="#icon-plus"></use></svg> Buat API Key
+                </button>
+              </div>
+              <div class="card-grid mt-4" id="apiKeysGrid">
+                <!-- Dynamic Keys populated by fetchApiKeys() -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right 1 Col: Webhook Alert Bento Card -->
+        <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-6 shadow-card space-y-4 h-full flex flex-col justify-between" id="section-integrations">
+          <div>
+            <div class="border-b border-slate-100 pb-3">
+              <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                <span class="p-1.5 rounded-lg bg-indigo-50 text-indigo-600"><svg class="w-4 h-4"><use href="#icon-bell"></use></svg></span>
+                Webhook Alert
+              </h3>
+              <p class="text-xs text-slate-500 mt-1">Notifikasi otomatis saat kuota akun Google Antigravity menipis (&lt; 15%).</p>
+            </div>
+
+            <div class="space-y-3 pt-1">
+              <label class="block text-xs font-semibold text-slate-700">Webhook Destination URL</label>
+              <input type="text" id="webhookTestUrl" class="w-full text-xs px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono" placeholder="https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<CHAT_ID>" oninput="localStorage.setItem('ag_webhook_url', this.value.trim())" />
+
+              <!-- Quick Telegram Preset Buttons -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <button type="button" class="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1" onclick="document.getElementById('webhookTestUrl').value='https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<CHAT_ID>'; localStorage.setItem('ag_webhook_url', document.getElementById('webhookTestUrl').value);">
+                  <svg class="w-3 h-3"><use href="#icon-send"></use></svg> Gunakan Format Telegram
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-2">
+            <button class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-sm" onclick="sendTestWebhook()">
+              <svg class="w-3.5 h-3.5"><use href="#icon-zap"></use></svg> Kirim Test Alert
+            </button>
+            <div id="webhookTestResult" class="text-xs text-center font-medium mt-1"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bento Row 2: Skills Prompt Injection (Full Width w-full) -->
+      <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-6 shadow-card space-y-5 w-full mt-6" id="section-skills">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">Skills Prompt Injection</h3>
+            <p class="text-xs text-slate-500">Preset persona dan penghemat token cerdas (RTK, Caveman, Ponytail, Context Mode).</p>
+          </div>
+          <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition shadow-sm self-start sm:self-auto shrink-0" onclick="openCreateSkillModal()">
+            <svg class="w-3.5 h-3.5"><use href="#icon-plus"></use></svg> Tambah Skill
+          </button>
+        </div>
+        <div class="card-grid" id="skillsGrid">
+          <!-- Dynamic Skills populated by fetchSkills() -->
+        </div>
+      </div>
+
+    </div>
+
+
+    <!-- TAB 2: USAGE & QUOTAS -->
+    <div id="tab-usage" class="tab-content">
+      <div class="glass-panel p-8 text-center text-slate-400">
+        <svg class="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2"><use href="#icon-refresh-cw"></use></svg>
+        <span class="text-xs font-semibold">Memuat Komponen Quota &amp; Usage...</span>
+      </div>
+    </div>
+
+    <!-- TAB 4: PROVIDER (ANTIGRAVITY) -->
+    <div id="tab-provider" class="tab-content">
+      <div class="glass-panel p-8 text-center text-slate-400">
+        <svg class="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2"><use href="#icon-refresh-cw"></use></svg>
+        <span class="text-xs font-semibold">Memuat Komponen Provider...</span>
+      </div>
+    </div>
+
+    <!-- TAB: MODEL FALLBACK RULES -->
+    <div id="tab-fallbacks" class="tab-content">
+      <div class="glass-panel p-8 text-center text-slate-400">
+        <svg class="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2"><use href="#icon-refresh-cw"></use></svg>
+        <span class="text-xs font-semibold">Memuat Komponen Fallback Rules...</span>
+      </div>
+    </div>
+
+    <!-- TAB: REQUEST INSPECTOR -->
+    <div id="tab-inspector" class="tab-content">
+      <div class="glass-panel p-8 text-center text-slate-400">
+        <svg class="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2"><use href="#icon-refresh-cw"></use></svg>
+        <span class="text-xs font-semibold">Memuat Komponen Request Inspector...</span>
+      </div>
+    </div>
+
+    <!-- TAB 6: PLAYGROUND -->
+    <div id="tab-playground" class="tab-content">
+      <div class="glass-panel p-8 text-center text-slate-400">
+        <svg class="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2"><use href="#icon-refresh-cw"></use></svg>
+        <span class="text-xs font-semibold">Memuat Komponen Playground...</span>
+      </div>
+    </div>
+
+    <!-- TAB: TOKEN SAVER & ANALYTICS (LAZY LOADED) -->
+    <div id="tab-analytics" class="tab-content">
+      <div id="analyticsMount">
+        <div class="glass-panel min-h-[380px] flex flex-col items-center justify-center gap-4">
+          <svg class="w-8 h-8 animate-spin text-blue-600"><use href="#icon-refresh-cw"></use></svg>
+          <div class="font-bold text-slate-500 text-sm">Memuat Modul Token Analytics...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="./assets/js/app.js"></script>
+  <!-- Two-Step Destructive Confirmation Modal -->
+  <div id="confirmModal" class="modal-backdrop">
+    <div class="modal-dialog flex flex-col gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+          <svg class="w-6 h-6"><use href="#icon-alert-triangle"></use></svg>
+        </div>
+        <div>
+          <h3 id="confirmModalTitle" class="text-base font-extrabold text-slate-900">Konfirmasi Tindakan</h3>
+          <p id="confirmModalSubtitle" class="text-xs text-slate-500">Aksi ini berdampak permanen.</p>
+        </div>
+      </div>
+      <div id="confirmModalDesc" class="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3.5 rounded-xl border border-slate-200/80"></div>
+      <div id="confirmModalStep2" class="flex flex-col gap-1.5">
+        <label class="text-xs font-bold text-slate-600" id="confirmModalInputLabel">Ketik ulang nama entitas untuk konfirmasi:</label>
+        <input type="text" id="confirmModalInput" class="chat-input text-xs w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/20" placeholder="" autocomplete="off" />
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        <button class="btn btn-sm" onclick="closeConfirmModal()">Batal</button>
+        <button id="confirmModalBtn" class="btn btn-sm btn-danger" disabled>Hapus Permanen</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

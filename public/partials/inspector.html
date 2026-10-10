@@ -1,0 +1,54 @@
+<!-- TAB: REQUEST INSPECTOR -->
+<div class="glass-panel">
+  <div class="flex justify-between items-center mb-4 flex-wrap gap-3">
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wider text-purple-600 flex items-center gap-1.5 mb-1">
+        <svg class="w-3.5 h-3.5"><use href="#icon-radio"></use></svg> Telemetry &amp; Diagnostics
+      </div>
+      <h2 class="text-xl font-extrabold text-slate-900">Live Request Inspector</h2>
+      <p class="text-xs text-slate-500 mt-0.5">Pantau live request secara real-time, periksa payload JSON, amati latensi jaringan, metrik token, dan eksekusi replay cURL 1-klik.</p>
+    </div>
+    <div class="flex gap-2 items-center flex-wrap">
+      <button class="btn btn-sm inline-flex items-center gap-1.5" onclick="fetchInspectorLogs()"><svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Refresh Log</button>
+      <button class="btn btn-sm btn-danger inline-flex items-center gap-1.5" onclick="clearInspectorLogs()"><svg class="w-3.5 h-3.5"><use href="#icon-trash-2"></use></svg> Clear Buffer</button>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto bg-white rounded-2xl border border-slate-200/90 shadow-card">
+    <table class="w-full text-left border-collapse text-xs">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-200/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+          <th class="p-3">Waktu</th>
+          <th class="p-3">Method / Path</th>
+          <th class="p-3">Model</th>
+          <th class="p-3">Akun Eksekusi</th>
+          <th class="p-3">Status</th>
+          <th class="p-3">Latensi</th>
+          <th class="p-3">Tokens (In / Out)</th>
+          <th class="p-3 text-right">Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="inspectorTableBody">
+        <tr><td colspan="8" class="p-8 text-center text-slate-400">Memuat log permintaan...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination Controls -->
+  <div class="flex justify-between items-center mt-4 flex-wrap gap-3">
+    <span id="inspectorPaginationInfo" class="text-xs text-slate-500 font-medium">
+      Menampilkan 0 - 0 dari 0 request
+    </span>
+    <div class="flex gap-2 items-center">
+      <button class="btn btn-sm inline-flex items-center gap-1" id="inspectorPrevBtn" onclick="prevInspectorPage()" disabled>
+        <svg class="w-3.5 h-3.5"><use href="#icon-chevron-left"></use></svg> Sebelumnya
+      </button>
+      <span id="inspectorPageIndicator" class="text-xs font-bold text-slate-700 px-2">
+        1 / 1
+      </span>
+      <button class="btn btn-sm inline-flex items-center gap-1" id="inspectorNextBtn" onclick="nextInspectorPage()" disabled>
+        Selanjutnya <svg class="w-3.5 h-3.5"><use href="#icon-chevron-right"></use></svg>
+      </button>
+    </div>
+  </div>
+</div>

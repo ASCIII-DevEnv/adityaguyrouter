@@ -1,0 +1,60 @@
+<!-- TAB 6: PLAYGROUND -->
+<div class="glass-panel p-5">
+  <div class="flex gap-4 flex-wrap items-start mb-4">
+    <div>
+      <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">AKUN PENGUJI</label>
+      <select id="pgAccount" class="block px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white min-w-[220px] shadow-xs focus:ring-2 focus:ring-blue-500/20" onchange="updatePgAccountBadge()">
+        <option value="">Auto (Account Pool &amp; Failover)</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">PILIH MODEL</label>
+      <select id="pgModel" class="block px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white shadow-xs focus:ring-2 focus:ring-blue-500/20">
+        <option value="gemini-3.8-flash-tiered">Gemini 3.8 Flash (Auto Tiered)</option>
+        <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Thinking)</option>
+        <option value="claude-opus-4-6-thinking">Claude Opus 4.6 (Thinking)</option>
+        <option value="gpt-oss-120b-medium">GPT-OSS 120B (Medium)</option>
+      </select>
+    </div>
+    <div class="self-end pb-1">
+      <span class="badge badge-success text-xs font-semibold" id="pgStatus">Ready</span>
+    </div>
+    <div class="ml-auto self-end pb-1">
+      <button class="btn btn-sm text-xs" onclick="clearPlayground()">Bersihkan Chat</button>
+    </div>
+  </div>
+
+  <!-- Persona & Skills Selector (Pills) -->
+  <div class="mb-4 p-3 bg-slate-50/80 rounded-xl border border-slate-200/80">
+    <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+      <div class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-purple-600"><use href="#icon-sparkles"></use></svg> Gabungkan Persona &amp; Skills Prompt:
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-sm text-[11px] px-2 py-0.5" onclick="selectAllComboSkills()">Pilih Semua (Super Prompt)</button>
+        <button class="btn btn-sm text-[11px] px-2 py-0.5" onclick="clearAllComboSkills()">Kosongkan</button>
+      </div>
+    </div>
+    <div class="flex gap-1.5 flex-wrap" id="pgSkillsPills">
+      <!-- Populated dynamically via fetchSkills() -->
+    </div>
+    <div class="text-[11px] text-slate-500 mt-2">
+      Skill terpilih akan otomatis digabungkan (*multi-injected*) ke dalam system instruction permintaan ke Gemini/Claude secara transparan.
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200/90 shadow-card flex flex-col h-[520px] overflow-hidden">
+    <div class="chat-messages p-5 overflow-y-auto flex-1 space-y-4" id="pgMessages">
+      <div class="chat-bubble assistant max-w-[85%] bg-slate-100 text-slate-800 text-xs p-4 rounded-2xl leading-relaxed">
+        Halo! Saya siap diuji coba. Anda bisa memilih akun spesifik untuk dites, memilih model Gemini Auto Tiered (Low/Medium/High otomatis dipilih berdasarkan prompt), serta menggabungkan beberapa Skill sekaligus di atas.
+      </div>
+    </div>
+    <div class="chat-input-area p-3 bg-slate-50 border-t border-slate-200/80 flex gap-3 w-full">
+      <input type="text" id="pgInput" class="chat-input text-xs w-full flex-1 px-4 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="Ketik ide/kebutuhan (misal: 'buat web perhitungan keuangan') atau pertanyaan..." onkeydown="if(event.key==='Enter') sendPlaygroundMessage()" />
+      <button id="pgSendBtn" class="btn btn-primary whitespace-nowrap px-5 py-2.5 flex items-center gap-1.5 text-xs font-bold shadow-xs" onclick="handlePlaygroundAction()">
+        <svg class="icon icon-sm"><use href="#icon-play"></use></svg>
+        <span>Kirim</span>
+      </button>
+    </div>
+  </div>
+</div>

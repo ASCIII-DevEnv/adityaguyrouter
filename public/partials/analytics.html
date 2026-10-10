@@ -1,0 +1,133 @@
+<!-- TAB: TOKEN SAVER & USAGE ANALYTICS -->
+<div class="rounded-3xl border border-slate-200/80 bg-white/90 backdrop-blur-md p-6 sm:p-8 shadow-card mb-6">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center pb-6 border-b border-slate-200/60">
+    <!-- Left Column: Title & Description -->
+    <div>
+      <h2 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+        Token Saver &amp; Usage Analytics
+      </h2>
+      <p class="text-xs sm:text-sm text-slate-500 mt-1 leading-relaxed">
+        Perbandingan output sebenarnya vs output setelah dikurangi skills token saver, serta input &amp; cached tokens per model.
+      </p>
+    </div>
+
+    <!-- Right Column: Filter Controls (Model, Periode & Refresh) -->
+    <div class="flex items-center justify-start lg:justify-end gap-3 flex-wrap">
+      <div class="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
+        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Model:</span>
+        <select id="analyticsModelSelect" class="px-2.5 py-1 text-xs bg-slate-50 border border-slate-200 font-semibold text-slate-700 cursor-pointer rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20" onchange="fetchTokenAnalytics()">
+          <option value="">Semua Model</option>
+        </select>
+      </div>
+
+      <div class="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
+        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Periode:</span>
+        <select id="analyticsDaysSelect" class="px-2.5 py-1 text-xs bg-slate-50 border border-slate-200 font-semibold text-slate-700 cursor-pointer rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20" onchange="fetchTokenAnalytics()">
+          <option value="1">Hari Ini (24 Jam)</option>
+          <option value="7" selected>7 Hari Terakhir</option>
+          <option value="30">30 Hari Terakhir</option>
+        </select>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-blue-600 bg-white/95 p-5 shadow-2xs">
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Permintaan</div>
+      <div id="statTotalRequests" class="text-2xl sm:text-3xl font-black text-slate-900 mt-1.5">-</div>
+      <div class="text-[11px] text-slate-400 mt-1">Request LLM terproses</div>
+    </div>
+    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-emerald-600 bg-white/95 p-5 shadow-2xs">
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Token Berhasil Dihemat</div>
+      <div id="statTotalTokensSaved" class="text-2xl sm:text-3xl font-black text-emerald-600 mt-1.5">-</div>
+      <div id="statSavedEfficiency" class="text-[11px] font-bold text-emerald-700 mt-1">Efisiensi: -%</div>
+    </div>
+    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-indigo-600 bg-white/95 p-5 shadow-2xs">
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Output Sebenarnya (Riil)</div>
+      <div id="statActualOutputTokens" class="text-2xl sm:text-3xl font-black text-indigo-600 mt-1.5">-</div>
+      <div id="statRawOutputTokens" class="text-[11px] text-slate-400 mt-1">Estimasi tanpa filter: -</div>
+    </div>
+    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-amber-500 bg-white/95 p-5 shadow-2xs">
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cached Prompt Tokens</div>
+      <div id="statCachedTokens" class="text-2xl sm:text-3xl font-black text-amber-500 mt-1.5">-</div>
+      <div id="statTotalInputTokens" class="text-[11px] text-slate-400 mt-1">Total input: -</div>
+    </div>
+  </div>
+
+  <!-- Chart: Token Saver Efficiency -->
+  <div class="rounded-2xl border border-slate-200/80 bg-white/95 p-5 sm:p-6 mt-6 shadow-2xs">
+    <div class="font-extrabold text-sm sm:text-base text-slate-900 mb-4 flex items-center gap-2">
+      <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-600"><svg class="w-4 h-4"><use href="#icon-zap"></use></svg></span>
+      Efisiensi Token Saver (Riil vs Hemat)
+    </div>
+    <div class="relative h-72 sm:h-80 w-full">
+      <canvas id="tokenSaverComparisonChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Chart: Daily Trend -->
+  <div class="rounded-2xl border border-slate-200/80 bg-white/95 p-5 sm:p-6 mt-6 shadow-2xs">
+    <div class="font-extrabold text-sm sm:text-base text-slate-900 mb-4 flex items-center gap-2">
+      <span class="p-1.5 rounded-lg bg-blue-50 text-blue-600"><svg class="w-4 h-4"><use href="#icon-activity"></use></svg></span>
+      Tren Harian: Token Diterima vs Token Dihemat
+    </div>
+    <div class="relative h-72 sm:h-80 w-full">
+      <canvas id="dailyTokenTrendChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Model Breakdown Table -->
+  <div class="rounded-2xl border border-slate-200/80 bg-white/95 p-5 sm:p-6 mt-6 shadow-2xs">
+    <div class="font-extrabold text-sm sm:text-base text-slate-900 mb-4 flex items-center gap-2">
+      <span class="p-1.5 rounded-lg bg-slate-100 text-slate-700"><svg class="w-4 h-4"><use href="#icon-layers"></use></svg></span>
+      Rincian Efisiensi &amp; Token Saver per Model
+    </div>
+    <div class="overflow-x-auto rounded-xl border border-slate-200/80">
+      <table class="w-full border-collapse text-xs">
+        <thead>
+          <tr class="bg-slate-50/80 border-b border-slate-200 text-left text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+            <th class="p-3">Model</th>
+            <th class="p-3">Total Requests</th>
+            <th class="p-3 text-purple-600">Input Tokens</th>
+            <th class="p-3 text-amber-500">Cached Tokens</th>
+            <th class="p-3 text-blue-600">Output Riil</th>
+            <th class="p-3 text-slate-400">Output Raw</th>
+            <th class="p-3 text-emerald-600">Dihemat</th>
+          </tr>
+        </thead>
+        <tbody id="analyticsModelBreakdownBody" class="divide-y divide-slate-100">
+          <!-- Dynamic Rows -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent Logs Table -->
+  <div class="rounded-2xl border border-slate-200/80 bg-white/95 p-5 sm:p-6 mt-6 shadow-2xs">
+    <div class="font-extrabold text-sm sm:text-base text-slate-900 mb-4 flex items-center gap-2">
+      <span class="p-1.5 rounded-lg bg-slate-100 text-slate-700"><svg class="w-4 h-4"><use href="#icon-clock"></use></svg></span>
+      Log Transaksi Terakhir &amp; Audit Token Saver
+    </div>
+    <div class="overflow-x-auto rounded-xl border border-slate-200/80">
+      <table class="w-full border-collapse text-xs">
+        <thead>
+          <tr class="bg-slate-50/80 border-b border-slate-200 text-left text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+            <th class="p-3">Waktu</th>
+            <th class="p-3">Model</th>
+            <th class="p-3">Akun Google</th>
+            <th class="p-3 text-purple-600">Input</th>
+            <th class="p-3 text-amber-500">Cached</th>
+            <th class="p-3 text-blue-600">Output Riil</th>
+            <th class="p-3 text-slate-400">Output Raw</th>
+            <th class="p-3 text-emerald-600">Dihemat</th>
+          </tr>
+        </thead>
+        <tbody id="analyticsRecentLogsBody" class="divide-y divide-slate-100">
+          <!-- Dynamic Rows -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
