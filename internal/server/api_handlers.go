@@ -38,7 +38,11 @@ func (h *ApiHandler) HandleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if host == "" {
 		host = fmt.Sprintf("localhost:%d", h.cfg.Port)
 	}
-	redirectURI := fmt.Sprintf("http://%s/callback", host)
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	redirectURI := fmt.Sprintf("%s://%s/callback", scheme, host)
 	authURL := h.client.BuildAuthURL(redirectURI, "")
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
@@ -52,7 +56,14 @@ func (h *ApiHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) 
 	}
 
 	host := r.Host
-	redirectURI := fmt.Sprintf("http://%s/callback", host)
+	if host == "" {
+		host = fmt.Sprintf("localhost:%d", h.cfg.Port)
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	redirectURI := fmt.Sprintf("%s://%s/callback", scheme, host)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()

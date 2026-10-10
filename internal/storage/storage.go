@@ -408,9 +408,9 @@ func (s *Storage) seedSampleTokenUsageLocked() {
 		"gpt-oss-120b-medium",
 	}
 	accountsList := []string{
-		"bbdx81621@gmail.com",
-		"salsabilasri01@gmail.com",
-		"adityaagy.11@gmail.com",
+		"developer_1@example.com",
+		"developer_2@example.com",
+		"team_ai@example.com",
 	}
 
 	// Skill variations to produce realistic variety across seed records
