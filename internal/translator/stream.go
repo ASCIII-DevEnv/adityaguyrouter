@@ -79,12 +79,19 @@ type AntigravityResponse struct {
 	Response struct {
 		Candidates    []AntigravityCandidate `json:"candidates"`
 		UsageMetadata struct {
-			PromptTokenCount     int `json:"promptTokenCount"`
-			CandidatesTokenCount int `json:"candidatesTokenCount"`
-			TotalTokenCount      int `json:"totalTokenCount"`
+			PromptTokenCount        int `json:"promptTokenCount"`
+			CandidatesTokenCount    int `json:"candidatesTokenCount"`
+			TotalTokenCount         int `json:"totalTokenCount"`
+			CachedContentTokenCount int `json:"cachedContentTokenCount"`
 		} `json:"usageMetadata"`
 	} `json:"response"`
-	Candidates []AntigravityCandidate `json:"candidates"`
+	Candidates    []AntigravityCandidate `json:"candidates"`
+	UsageMetadata struct {
+		PromptTokenCount        int `json:"promptTokenCount"`
+		CandidatesTokenCount    int `json:"candidatesTokenCount"`
+		TotalTokenCount         int `json:"totalTokenCount"`
+		CachedContentTokenCount int `json:"cachedContentTokenCount"`
+	} `json:"usageMetadata"`
 }
 
 func (r *AntigravityResponse) GetCandidates() []AntigravityCandidate {
@@ -165,10 +172,10 @@ func mapFinishReason(fr string) string {
 }
 
 // StreamOpenAI converts upstream SSE stream from Antigravity to OpenAI SSE format
-func StreamOpenAI(w http.ResponseWriter, upstream io.Reader, modelName string) error {
+func StreamOpenAI(w http.ResponseWriter, upstream io.Reader, modelName string) (*model.OpenAIUsage, error) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return fmt.Errorf("streaming unsupported")
+		return nil, fmt.Errorf("streaming unsupported")
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -183,6 +190,7 @@ func StreamOpenAI(w http.ResponseWriter, upstream io.Reader, modelName string) e
 
 	reqID := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
 	hasToolCalls := false
+	var lastUsage *model.OpenAIUsage
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -197,6 +205,24 @@ func StreamOpenAI(w http.ResponseWriter, upstream io.Reader, modelName string) e
 		var antiResp AntigravityResponse
 		if err := json.Unmarshal([]byte(dataStr), &antiResp); err != nil {
 			continue
+		}
+
+		// Track token usage reported by Google CloudCode
+		um := antiResp.Response.UsageMetadata
+		if um.PromptTokenCount == 0 && antiResp.UsageMetadata.PromptTokenCount > 0 {
+			um = antiResp.UsageMetadata
+		}
+		if um.PromptTokenCount > 0 || um.CandidatesTokenCount > 0 {
+			lastUsage = &model.OpenAIUsage{
+				PromptTokens:     um.PromptTokenCount,
+				CompletionTokens: um.CandidatesTokenCount,
+				TotalTokens:      um.TotalTokenCount,
+			}
+			if um.CachedContentTokenCount > 0 {
+				lastUsage.PromptTokensDetails = &model.PromptTokensDetails{
+					CachedTokens: um.CachedContentTokenCount,
+				}
+			}
 		}
 
 		text, reasoningText, toolCalls, finishReason := antiResp.Extract()
@@ -260,20 +286,21 @@ func StreamOpenAI(w http.ResponseWriter, upstream io.Reader, modelName string) e
 				FinishReason: &finalStop,
 			},
 		},
+		Usage: lastUsage,
 	}
 	chunkBytes, _ := json.Marshal(finalChunk)
 	fmt.Fprintf(w, "data: %s\n\n", string(chunkBytes))
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
 
-	return scanner.Err()
+	return lastUsage, scanner.Err()
 }
 
 // StreamAnthropic converts upstream SSE stream from Antigravity to Anthropic SSE format
-func StreamAnthropic(w http.ResponseWriter, upstream io.Reader, modelName string) error {
+func StreamAnthropic(w http.ResponseWriter, upstream io.Reader, modelName string) (*model.OpenAIUsage, error) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return fmt.Errorf("streaming unsupported")
+		return nil, fmt.Errorf("streaming unsupported")
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -282,6 +309,7 @@ func StreamAnthropic(w http.ResponseWriter, upstream io.Reader, modelName string
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	msgID := fmt.Sprintf("msg_%d", time.Now().UnixNano())
+	var lastUsage *model.OpenAIUsage
 
 	// 1. message_start
 	fmt.Fprintf(w, "event: message_start\ndata: %s\n\n", fmt.Sprintf(`{"type":"message_start","message":{"id":"%s","type":"message","role":"assistant","model":"%s","content":[],"usage":{"input_tokens":10,"output_tokens":0}}}`, msgID, modelName))
@@ -309,6 +337,24 @@ func StreamAnthropic(w http.ResponseWriter, upstream io.Reader, modelName string
 		var antiResp AntigravityResponse
 		if err := json.Unmarshal([]byte(dataStr), &antiResp); err != nil {
 			continue
+		}
+
+		// Track token usage reported by Google CloudCode
+		um := antiResp.Response.UsageMetadata
+		if um.PromptTokenCount == 0 && antiResp.UsageMetadata.PromptTokenCount > 0 {
+			um = antiResp.UsageMetadata
+		}
+		if um.PromptTokenCount > 0 || um.CandidatesTokenCount > 0 {
+			lastUsage = &model.OpenAIUsage{
+				PromptTokens:     um.PromptTokenCount,
+				CompletionTokens: um.CandidatesTokenCount,
+				TotalTokens:      um.TotalTokenCount,
+			}
+			if um.CachedContentTokenCount > 0 {
+				lastUsage.PromptTokensDetails = &model.PromptTokensDetails{
+					CachedTokens: um.CachedContentTokenCount,
+				}
+			}
 		}
 
 		text, reasoningText, toolCalls, _ := antiResp.Extract()
@@ -342,11 +388,15 @@ func StreamAnthropic(w http.ResponseWriter, upstream io.Reader, modelName string
 		stopReason = "tool_use"
 	}
 
+	outTok := 20
+	if lastUsage != nil && lastUsage.CompletionTokens > 0 {
+		outTok = lastUsage.CompletionTokens
+	}
 	// 3. content_block_stop & message_delta & message_stop
 	fmt.Fprintf(w, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
-	fmt.Fprintf(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"%s\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":20}}\n\n", stopReason)
+	fmt.Fprintf(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"%s\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":%d}}\n\n", stopReason, outTok)
 	fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 	flusher.Flush()
 
-	return scanner.Err()
+	return lastUsage, scanner.Err()
 }

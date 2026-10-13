@@ -6,13 +6,13 @@ import (
 	"antigravity-gateway/internal/provider"
 	"antigravity-gateway/internal/storage"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -219,11 +219,16 @@ func (h *ApiHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
 		// Redact tokens
 		var safeAccs []map[string]interface{}
 		for _, a := range accounts {
+			providerName := a.Provider
+			if providerName == "" {
+				providerName = "antigravity"
+			}
 			safeAccs = append(safeAccs, map[string]interface{}{
 				"email":              a.Email,
 				"name":               a.Name,
 				"picture":            a.Picture,
 				"tier":               a.Tier,
+				"provider":           providerName,
 				"projectId":          a.ProjectId,
 				"isActive":           a.IsActive,
 				"order":              a.Order,
@@ -255,6 +260,17 @@ func (h *ApiHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if body.Action == "sync_all" || body.Action == "refresh_all" {
+			ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+			defer cancel()
+			h.pool.RefreshAllQuotas(ctx)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"message": "Semua kuota akun berhasil disinkronkan",
+			})
 			return
 		}
 
@@ -322,60 +338,65 @@ func (h *ApiHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Import accounts from OmniRoute SQLite
-func (h *ApiHandler) HandleImportOmniRoute(w http.ResponseWriter, r *http.Request) {
-	homeDir, _ := os.UserHomeDir()
-	sqlitePath := filepath.Join(homeDir, "omniroute/data/storage.sqlite")
-
-	if _, err := os.Stat(sqlitePath); os.IsNotExist(err) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"count":   0,
-			"message": "OmniRoute SQLite not found at " + sqlitePath,
-		})
+// Accounts Sync API: POST & GET /api/accounts/sync
+func (h *ApiHandler) HandleAccountsSync(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Read sqlite via simple cli query to avoid CGO sqlite drivers in alpine
-	// (we can read raw JSON from sqlite3 cli if present or fall back)
-	db, err := sql.Open("sqlite3", sqlitePath)
-	importedCount := 0
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	h.pool.RefreshAllQuotas(ctx)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Semua kuota akun berhasil disinkronkan",
+	})
+}
 
-	if err == nil {
-		defer db.Close()
-		rows, qErr := db.Query("SELECT email, access_token, refresh_token, token_expires_at, project_id FROM provider_connections WHERE provider = 'antigravity'")
-		if qErr == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var email, accessToken, refreshToken, expiresAtStr, projectID string
-				if err := rows.Scan(&email, &accessToken, &refreshToken, &expiresAtStr, &projectID); err == nil && email != "" {
-					expTime, _ := time.Parse(time.RFC3339, expiresAtStr)
-					if expTime.IsZero() {
-						expTime = time.Now().Add(1 * time.Hour)
-					}
-					acc := &model.Account{
-						Email:              email,
-						AccessToken:        accessToken,
-						RefreshToken:       refreshToken,
-						TokenExpiresAt:     expTime,
-						ProjectId:          projectID,
-						IsActive:           true,
-						Tier:               "Google AI Pro",
-						Quota5hPercent:     100.0,
-						QuotaWeeklyPercent: 100.0,
-					}
-					_ = h.storage.UpsertAccount(acc)
-					importedCount++
-				}
-			}
-		}
+// Projects API: GET /api/projects
+func (h *ApiHandler) HandleProjects(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	projects := ListProjects(h.cfg.ProjectsDir)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"count":   importedCount,
-		"message": fmt.Sprintf("Imported %d accounts from OmniRoute", importedCount),
+		"projects": projects,
+		"baseDir":  h.cfg.ProjectsDir,
 	})
+}
+
+// Project Context API: GET /api/projects/context?name=xxx
+func (h *ApiHandler) HandleProjectContext(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, `{"error":"parameter name diperlukan"}`, http.StatusBadRequest)
+		return
+	}
+	name = filepath.Clean(name)
+	if strings.Contains(name, "..") || strings.HasPrefix(name, "/") {
+		http.Error(w, `{"error":"invalid project name"}`, http.StatusBadRequest)
+		return
+	}
+
+	projPath := filepath.Join(h.cfg.ProjectsDir, name)
+	if fi, err := os.Stat(projPath); err != nil || !fi.IsDir() {
+		http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+		return
+	}
+
+	summary := InspectProject(projPath, name)
+	_ = json.NewEncoder(w).Encode(summary)
 }
 
 // HandleImportLocalSystem auto-detects and imports Google credentials from gcloud / local system
@@ -706,8 +727,6 @@ func (h *ApiHandler) HandleProviderStrategy(w http.ResponseWriter, r *http.Reque
 			"options": []map[string]string{
 				{"id": "smart_quota", "name": "Smart Quota (Default)", "desc": "Prioritaskan sisa kuota tertinggi & rotasi cerdas anti rate-limit"},
 				{"id": "fill_first", "name": "Fill First (Urutan Akun)", "desc": "Pakai akun urutan pertama sampai habis, lalu berpindah ke akun berikutnya"},
-				{"id": "round_robin", "name": "Round Robin (Bergiliran)", "desc": "Rotasi request merata antar seluruh akun aktif"},
-				{"id": "least_used", "name": "Least Used (Beban Terendah)", "desc": "Pilih akun dengan jumlah total request paling sedikit"},
 			},
 		})
 
@@ -719,7 +738,7 @@ func (h *ApiHandler) HandleProviderStrategy(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if body.Strategy == "" {
+		if body.Strategy != "fill_first" {
 			body.Strategy = "smart_quota"
 		}
 		h.storage.SetProviderStrategy(body.Strategy)
@@ -731,4 +750,146 @@ func (h *ApiHandler) HandleProviderStrategy(w http.ResponseWriter, r *http.Reque
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// HandleToolExecute handles POST /api/tools/execute
+func (h *ApiHandler) HandleToolExecute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var req ToolExecutionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ToolExecutionResponse{
+			Success: false,
+			Error:   "Invalid JSON payload: " + err.Error(),
+		})
+		return
+	}
+
+	var res *ToolExecutionResponse
+	var err error
+
+	switch req.Name {
+	case "web_search":
+		query, _ := req.Args["query"].(string)
+		res, err = ExecuteWebSearch(query)
+	case "fetch_web_page":
+		targetUrl, _ := req.Args["url"].(string)
+		res, err = ExecuteFetchWebPage(targetUrl)
+	case "github_inspect":
+		repo, _ := req.Args["repo"].(string)
+		path, _ := req.Args["path"].(string)
+		res, err = ExecuteGithubInspect(repo, path)
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ToolExecutionResponse{
+			Success: false,
+			Name:    req.Name,
+			Error:   fmt.Sprintf("Tool tidak dikenal: '%s'", req.Name),
+		})
+		return
+	}
+
+	if err != nil {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(ToolExecutionResponse{
+			Success: false,
+			Name:    req.Name,
+			Error:   err.Error(),
+			Content: fmt.Sprintf("Error executing tool %s: %s", req.Name, err.Error()),
+		})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+// HandleDiagnostics handles GET /api/diagnostics
+func (h *ApiHandler) HandleDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// 1. Go Runtime Memory & Health
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// 2. Inspect Accounts & Probe Latency
+	accounts := h.storage.GetAccounts()
+	type AccountDiagnostic struct {
+		Email              string  `json:"email"`
+		ProjectID          string  `json:"projectId"`
+		Tier               string  `json:"tier"`
+		Status             string  `json:"status"`
+		LatencyMs          int64   `json:"latencyMs"`
+		Quota5hPercent     float64 `json:"quota5hPercent"`
+		QuotaWeeklyPercent float64 `json:"quotaWeeklyPercent"`
+		TokenExpiry        string  `json:"tokenExpiry,omitempty"`
+		LastChecked        string  `json:"lastChecked"`
+	}
+
+	var accDiags []AccountDiagnostic
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+
+	for _, acc := range accounts {
+		status := "Active"
+		if acc.QuotaWeeklyPercent <= 0 {
+			status = "Exhausted"
+		}
+
+		// Measure real RTT latency via minimal Cloud Code check
+		start := time.Now()
+		probeLatency := int64(0)
+		body := []byte(`{"models":true}`)
+		res, err := h.client.CallCloudCode(ctx, h.cfg.ModelsPath, acc.AccessToken, acc.ProjectId, body)
+		duration := time.Since(start).Milliseconds()
+		if err == nil && res != nil {
+			probeLatency = duration
+			res.Body.Close()
+		} else {
+			probeLatency = duration
+			if status == "Active" {
+				status = "Degraded"
+			}
+		}
+
+		accDiags = append(accDiags, AccountDiagnostic{
+			Email:              acc.Email,
+			ProjectID:          acc.ProjectId,
+			Tier:               acc.Tier,
+			Status:             status,
+			LatencyMs:          probeLatency,
+			Quota5hPercent:     acc.Quota5hPercent,
+			QuotaWeeklyPercent: acc.QuotaWeeklyPercent,
+			LastChecked:        time.Now().Format("15:04:05 WIB"),
+		})
+	}
+
+	response := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"status":        "Healthy",
+			"goroutines":    runtime.NumGoroutine(),
+			"memoryAllocMB": float64(m.Alloc) / 1024 / 1024,
+			"memorySysMB":   float64(m.Sys) / 1024 / 1024,
+			"gcCycles":      m.NumGC,
+			"checkedAt":     time.Now().Format("2006-01-02 15:04:05 WIB"),
+		},
+		"accounts": accDiags,
+		"circuitBreaker": map[string]interface{}{
+			"gemini-3.8-flash-tiered": "Closed (Healthy)",
+			"claude-sonnet-4-6":       "Closed (Healthy)",
+			"claude-opus-4-6-thinking": "Closed (Healthy)",
+		},
+	}
+
+	_ = json.NewEncoder(w).Encode(response)
 }

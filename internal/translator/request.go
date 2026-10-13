@@ -32,6 +32,7 @@ type GeminiFunctionCall struct {
 type GeminiFunctionResponse struct {
 	Name     string                 `json:"name"`
 	Response map[string]interface{} `json:"response"`
+	ID       string                 `json:"id,omitempty"`
 }
 
 type GeminiContent struct {
@@ -146,17 +147,14 @@ func ConvertOpenAIToAntigravity(projectID string, req *model.OpenAIChatRequest, 
 				fnName = "tool_response"
 			}
 			contentStr := extractMessageContent(m.Content)
-			// Smart Context Compaction: Prune oversized historical tool responses (>2500 chars)
-			contentStr = PruneToolOutput(contentStr, 2500)
+			// Smart Context Compaction: Prune oversized historical tool responses (>50,000 chars) while preserving JSON structure
+			respObj := parseAndPruneToolResponse(contentStr, 50000)
 
-			var respObj map[string]interface{}
-			if err := json.Unmarshal([]byte(contentStr), &respObj); err != nil {
-				respObj = map[string]interface{}{"output": contentStr}
-			}
 			part := GeminiPart{
 				FunctionResponse: &GeminiFunctionResponse{
 					Name:     fnName,
 					Response: respObj,
+					ID:       m.ToolCallID,
 				},
 			}
 			contents = appendOrMergeContent(contents, "user", []GeminiPart{part})
@@ -302,6 +300,23 @@ func ConvertAnthropicToAntigravity(projectID string, req *model.AnthropicRequest
 		systemText = skills.InjectSkill(skillPrompt, systemText)
 	}
 
+	toolCallMap := make(map[string]string)
+	for _, m := range req.Messages {
+		if blocks, ok := m.Content.([]interface{}); ok {
+			for _, item := range blocks {
+				if block, ok := item.(map[string]interface{}); ok {
+					if block["type"] == "tool_use" {
+						id, _ := block["id"].(string)
+						name, _ := block["name"].(string)
+						if id != "" && name != "" {
+							toolCallMap[id] = name
+						}
+					}
+				}
+			}
+		}
+	}
+
 	var contents []GeminiContent
 	for _, m := range req.Messages {
 		role := "user"
@@ -327,6 +342,9 @@ func ConvertAnthropicToAntigravity(projectID string, req *model.AnthropicRequest
 					case "tool_use":
 						name, _ := block["name"].(string)
 						toolID, _ := block["id"].(string)
+						if toolID != "" && name != "" {
+							toolCallMap[toolID] = name
+						}
 						var input map[string]interface{}
 						if in, ok := block["input"].(map[string]interface{}); ok {
 							input = in
@@ -346,22 +364,26 @@ func ConvertAnthropicToAntigravity(projectID string, req *model.AnthropicRequest
 							},
 						})
 					case "tool_result":
-						var respObj map[string]interface{}
 						resContent := extractMessageContent(block["content"])
-						// Smart Context Compaction: Prune oversized historical tool responses (>2500 chars)
-						resContent = PruneToolOutput(resContent, 2500)
+						// Smart Context Compaction: Prune oversized historical tool responses (>50,000 chars) while preserving JSON structure
+						respObj := parseAndPruneToolResponse(resContent, 50000)
 
-						if err := json.Unmarshal([]byte(resContent), &respObj); err != nil {
-							respObj = map[string]interface{}{"output": resContent}
-						}
-						name, _ := block["tool_use_id"].(string)
-						if name == "" {
-							name = "tool_result"
+						toolUseID, _ := block["tool_use_id"].(string)
+						fnName := toolCallMap[toolUseID]
+						if fnName == "" {
+							if n, ok := block["name"].(string); ok && n != "" {
+								fnName = n
+							} else if toolUseID != "" {
+								fnName = toolUseID
+							} else {
+								fnName = "tool_result"
+							}
 						}
 						parts = append(parts, GeminiPart{
 							FunctionResponse: &GeminiFunctionResponse{
-								Name:     name,
+								Name:     fnName,
 								Response: respObj,
+								ID:       toolUseID,
 							},
 						})
 					case "image":
@@ -576,7 +598,7 @@ func ResolveModelWithComplexity(requestedModel string, complexity PromptComplexi
 		}
 		return "gemini-3.1-pro-low"
 	case "", "gpt-4", "gpt-4o", "gpt-3.5-turbo":
-		return "gemini-2.5-pro"
+		return "gemini-3.8-flash-tiered"
 	default:
 		// Exact explicit model name provided by user (e.g. claude-sonnet-4-6, gemini-3.8-flash-high)
 		return requestedModel
@@ -600,6 +622,23 @@ func extractMessageContent(content interface{}) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// parseAndPruneToolResponse safely parses JSON responses and avoids breaking JSON structure
+func parseAndPruneToolResponse(contentStr string, maxChars int) map[string]interface{} {
+	var respObj map[string]interface{}
+	if err := json.Unmarshal([]byte(contentStr), &respObj); err == nil {
+		// Valid JSON structure. Check and prune oversized inner string fields
+		for k, v := range respObj {
+			if s, ok := v.(string); ok && len(s) > maxChars {
+				respObj[k] = PruneToolOutput(s, maxChars)
+			}
+		}
+		return respObj
+	}
+	// Plain text: prune if exceeds maxChars
+	pruned := PruneToolOutput(contentStr, maxChars)
+	return map[string]interface{}{"output": pruned}
 }
 
 func appendOrMergeContent(contents []GeminiContent, role string, parts []GeminiPart) []GeminiContent {
@@ -674,6 +713,10 @@ func convertToolChoice(tc interface{}) *GeminiToolConfig {
 }
 
 func sanitizeSchema(schema interface{}) interface{} {
+	return sanitizeSchemaInternal(schema, true)
+}
+
+func sanitizeSchemaInternal(schema interface{}, isRoot bool) interface{} {
 	if schema == nil {
 		return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
 	}
@@ -686,24 +729,124 @@ func sanitizeSchema(schema interface{}) interface{} {
 		if k == "$schema" || k == "additionalProperties" {
 			continue
 		}
+		if k == "type" {
+			if typeList, isList := v.([]interface{}); isList {
+				var nonNullTypes []string
+				isNullable := false
+				for _, t := range typeList {
+					if str, ok := t.(string); ok {
+						if str == "null" {
+							isNullable = true
+						} else {
+							nonNullTypes = append(nonNullTypes, str)
+						}
+					}
+				}
+				if isNullable {
+					clean["nullable"] = true
+				}
+				if len(nonNullTypes) > 0 {
+					clean["type"] = nonNullTypes[0]
+				} else {
+					clean["type"] = "string"
+				}
+				continue
+			} else if typeStrList, isStrList := v.([]string); isStrList {
+				var nonNullTypes []string
+				isNullable := false
+				for _, str := range typeStrList {
+					if str == "null" {
+						isNullable = true
+					} else {
+						nonNullTypes = append(nonNullTypes, str)
+					}
+				}
+				if isNullable {
+					clean["nullable"] = true
+				}
+				if len(nonNullTypes) > 0 {
+					clean["type"] = nonNullTypes[0]
+				} else {
+					clean["type"] = "string"
+				}
+				continue
+			} else if typeStr, isStr := v.(string); isStr && typeStr == "null" {
+				clean["nullable"] = true
+				clean["type"] = "string"
+				continue
+			}
+		}
 		if k == "properties" {
 			if props, isMap := v.(map[string]interface{}); isMap {
 				cleanProps := make(map[string]interface{})
 				for pk, pv := range props {
-					cleanProps[pk] = sanitizeSchema(pv)
+					cleanProps[pk] = sanitizeSchemaInternal(pv, false)
 				}
 				clean[k] = cleanProps
 				continue
 			}
 		}
 		if k == "items" {
-			clean[k] = sanitizeSchema(v)
-			continue
+			if itemMap, isMap := v.(map[string]interface{}); isMap {
+				clean[k] = sanitizeSchemaInternal(itemMap, false)
+				continue
+			} else if itemList, isList := v.([]interface{}); isList {
+				var cleanList []interface{}
+				for _, it := range itemList {
+					cleanList = append(cleanList, sanitizeSchemaInternal(it, false))
+				}
+				clean[k] = cleanList
+				continue
+			}
+		}
+		// Convert anyOf to oneOf everywhere (Anthropic Claude strictly requires oneOf for unions)
+		if k == "anyOf" {
+			if list, isList := v.([]interface{}); isList {
+				var cleanBranches []interface{}
+				for _, branch := range list {
+					cleanBranches = append(cleanBranches, sanitizeSchemaInternal(branch, false))
+				}
+				clean["oneOf"] = cleanBranches
+				continue
+			}
+		}
+		if k == "oneOf" || k == "allOf" {
+			if list, isList := v.([]interface{}); isList {
+				var cleanBranches []interface{}
+				for _, branch := range list {
+					cleanBranches = append(cleanBranches, sanitizeSchemaInternal(branch, false))
+				}
+				clean[k] = cleanBranches
+				continue
+			}
 		}
 		clean[k] = v
 	}
+
+
+	// Combinator detection
+	_, hasAnyOf := clean["anyOf"]
+	_, hasOneOf := clean["oneOf"]
+	_, hasAllOf := clean["allOf"]
+	_, hasRef := clean["$ref"]
+	hasCombinator := hasAnyOf || hasOneOf || hasAllOf || hasRef
+
 	if _, hasType := clean["type"]; !hasType {
-		clean["type"] = "object"
+		if isRoot {
+			clean["type"] = "object"
+			if _, hasProps := clean["properties"]; !hasProps {
+				clean["properties"] = map[string]interface{}{}
+			}
+		} else if _, hasProps := clean["properties"]; hasProps {
+			clean["type"] = "object"
+		} else if !hasCombinator {
+			clean["type"] = "object"
+		}
+	} else if isRoot && clean["type"] == "object" {
+		if _, hasProps := clean["properties"]; !hasProps {
+			clean["properties"] = map[string]interface{}{}
+		}
 	}
 	return clean
 }
+

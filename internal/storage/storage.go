@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ type Storage struct {
 	skillsPath      string
 	tokenUsagePath  string
 	fallbacksPath   string
+	strategyPath    string
 
 	accounts        map[string]*model.Account
 	apiKeys         map[string]*model.ApiKey
@@ -34,12 +36,18 @@ type Storage struct {
 }
 
 func NewStorage(cfg *config.Config) (*Storage, error) {
+	strategyPath := cfg.StrategyPath
+	if strategyPath == "" && cfg.DataDir != "" {
+		strategyPath = filepath.Join(cfg.DataDir, "provider_strategy.json")
+	}
+
 	s := &Storage{
 		accountsPath:   cfg.AccountsPath,
 		apiKeysPath:    cfg.ApiKeysPath,
 		skillsPath:     cfg.SkillsPath,
 		tokenUsagePath: cfg.TokenUsagePath,
 		fallbacksPath:  cfg.FallbacksPath,
+		strategyPath:   strategyPath,
 		accounts:       make(map[string]*model.Account),
 		apiKeys:        make(map[string]*model.ApiKey),
 		skills:         make(map[string]*model.Skill),
@@ -56,7 +64,7 @@ func NewStorage(cfg *config.Config) (*Storage, error) {
 
 func (s *Storage) startFlushWorker() {
 	go func() {
-		ticker := time.NewTicker(3 * time.Second)
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			s.FlushTokenUsage()
@@ -78,8 +86,37 @@ func (s *Storage) FlushTokenUsage() {
 
 	bytes, err := json.MarshalIndent(records, "", "  ")
 	if err == nil {
-		_ = os.WriteFile(s.tokenUsagePath, bytes, 0644)
+		_ = atomicWriteFile(s.tokenUsagePath, bytes, 0644)
 	}
+}
+
+// Request Inspector operations
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmpFile, err := os.CreateTemp(dir, "temp-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmpFile.Name()
+	defer func() {
+		_ = os.Remove(tmpName)
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // Request Inspector operations
@@ -169,14 +206,27 @@ func (s *Storage) loadAll() error {
 		s.fallbacks = &model.FallbackConfig{
 			Enabled: true,
 			Rules: map[string][]string{
-				"claude-opus-4-6-thinking": {"claude-sonnet-4-6", "gemini-3.8-flash-tiered"},
-				"claude-sonnet-4-6":       {"claude-opus-4-6-thinking", "gemini-3.8-flash-tiered"},
-				"gpt-oss-120b-medium":     {"gemini-3.8-flash-tiered", "claude-sonnet-4-6"},
-				"gemini-3.8-flash-tiered": {"claude-sonnet-4-6", "gpt-oss-120b-medium"},
-				"default":                 {"gemini-3.8-flash-tiered", "claude-sonnet-4-6"},
+		"claude-opus-4-6-thinking": {"claude-sonnet-4-6", "gemini-3.8-flash-tiered"},
+		"claude-sonnet-4-6":       {"claude-opus-4-6-thinking", "gemini-3.8-flash-tiered"},
+		"gpt-oss-120b-medium":     {"gemini-3.8-flash-tiered", "claude-sonnet-4-6"},
+		"gemini-3.8-flash-tiered": {"claude-sonnet-4-6", "gpt-oss-120b-medium"},
+		"default":                 {"gemini-3.8-flash-tiered", "claude-sonnet-4-6"},
 			},
 		}
 		_ = s.saveFallbacksLocked()
+	}
+
+	// 6. Load Provider Strategy
+	if s.strategyPath != "" {
+		if raw, err := os.ReadFile(s.strategyPath); err == nil {
+			var sc model.ProviderStrategyConfig
+			if err := json.Unmarshal(raw, &sc); err == nil && sc.Strategy != "" {
+				s.providerStrategy = sc.Strategy
+			}
+		}
+	}
+	if s.providerStrategy == "" {
+		s.providerStrategy = "smart_quota"
 	}
 
 	return nil
@@ -191,7 +241,7 @@ func (s *Storage) saveAccountsLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.accountsPath, bytes, 0644)
+	return atomicWriteFile(s.accountsPath, bytes, 0644)
 }
 
 func (s *Storage) saveApiKeysLocked() error {
@@ -199,7 +249,7 @@ func (s *Storage) saveApiKeysLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.apiKeysPath, bytes, 0644)
+	return atomicWriteFile(s.apiKeysPath, bytes, 0644)
 }
 
 func (s *Storage) saveSkillsLocked() error {
@@ -207,7 +257,7 @@ func (s *Storage) saveSkillsLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.skillsPath, bytes, 0644)
+	return atomicWriteFile(s.skillsPath, bytes, 0644)
 }
 
 // Account operations
@@ -424,17 +474,17 @@ func (s *Storage) loadTokenUsageLocked() {
 	if raw, err := os.ReadFile(s.tokenUsagePath); err == nil {
 		var records []model.TokenUsageRecord
 		if err := json.Unmarshal(raw, &records); err == nil && len(records) > 0 {
-			// Normalize historical models
-			for i := range records {
-				m := records[i].Model
-				if m == "gemini-2.5-pro" {
-					records[i].Model = "gemini-3.8-flash-tiered"
-				} else if m == "claude-sonnet-5-5" {
-					records[i].Model = "claude-sonnet-4-6"
-				} else if m == "claude-opus-5-5-thinking" {
-					records[i].Model = "claude-opus-4-6-thinking"
-				}
+		// Normalize historical models
+		for i := range records {
+			m := records[i].Model
+			if m == "gemini-2.5-pro" {
+				records[i].Model = "gemini-3.8-flash-tiered"
+			} else if m == "claude-sonnet-5-5" {
+				records[i].Model = "claude-sonnet-4-6"
+			} else if m == "claude-opus-5-5-thinking" {
+				records[i].Model = "claude-opus-4-6-thinking"
 			}
+		}
 			s.tokenUsage = records
 			_ = s.saveTokenUsageLocked()
 			return
@@ -446,7 +496,7 @@ func (s *Storage) loadTokenUsageLocked() {
 
 func (s *Storage) saveTokenUsageLocked() error {
 	// Retain up to 20,000 recent records to prevent infinite growth
-	const maxRecords = 20000
+	const maxRecords = 5000
 	if len(s.tokenUsage) > maxRecords {
 		s.tokenUsage = s.tokenUsage[len(s.tokenUsage)-maxRecords:]
 	}
@@ -454,7 +504,7 @@ func (s *Storage) saveTokenUsageLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.tokenUsagePath, bytes, 0644)
+	return atomicWriteFile(s.tokenUsagePath, bytes, 0644)
 }
 
 func (s *Storage) seedSampleTokenUsageLocked() {
@@ -548,7 +598,7 @@ func (s *Storage) RecordTokenUsage(rec *model.TokenUsageRecord) {
 	}
 	rec.Hour = rec.Timestamp.Hour()
 
-	const maxRecords = 20000
+	const maxRecords = 5000
 	s.tokenUsage = append(s.tokenUsage, *rec)
 	if len(s.tokenUsage) > maxRecords {
 		s.tokenUsage = s.tokenUsage[len(s.tokenUsage)-maxRecords:]
@@ -714,10 +764,10 @@ func (s *Storage) GetTokenAnalytics(period string, modelFilter string) *model.To
 		}
 	}
 
-	// Recent logs (last 15 records in reverse chronological order)
+	// Recent logs (last 10 records in reverse chronological order)
 	var recent []model.TokenUsageRecord
 	startIdx := len(filtered) - 1
-	for i := startIdx; i >= 0 && len(recent) < 15; i-- {
+	for i := startIdx; i >= 0 && len(recent) < 10; i-- {
 		recent = append(recent, filtered[i])
 	}
 
@@ -768,7 +818,7 @@ func (s *Storage) saveFallbacksLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.fallbacksPath, bytes, 0644)
+	return atomicWriteFile(s.fallbacksPath, bytes, 0644)
 }
 
 func (s *Storage) GetModelFallbackChain(originalModel string) []string {
@@ -811,6 +861,23 @@ func (s *Storage) GetProviderStrategy() string {
 func (s *Storage) SetProviderStrategy(strat string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if strat != "fill_first" {
+		strat = "smart_quota"
+	}
 	s.providerStrategy = strat
+	if s.strategyPath != "" {
+		_ = s.saveProviderStrategyLocked()
+	}
+}
+
+func (s *Storage) saveProviderStrategyLocked() error {
+	sc := model.ProviderStrategyConfig{
+		Strategy: s.providerStrategy,
+	}
+	bytes, err := json.MarshalIndent(sc, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(s.strategyPath, bytes, 0644)
 }
 

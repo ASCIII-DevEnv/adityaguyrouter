@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -31,7 +33,7 @@ func NewGatewayHandler(cfg *config.Config, st *storage.Storage, pool *provider.A
 		storage: st,
 		pool:    pool,
 		client:  client,
-		pacer:   provider.NewTrafficPacer(0.5, 5.0, 150*time.Millisecond),
+		pacer:   provider.NewTrafficPacer(5.0, 15.0, 30*time.Millisecond),
 		shield:  translator.NewSecretShield(),
 	}
 }
@@ -80,6 +82,25 @@ func (h *GatewayHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Re
 		sessionID = r.Header.Get("Authorization")
 	}
 
+	// Project Context Injection (if requested via req.Project or x-project header)
+	projectToInspect := req.Project
+	if projectToInspect == "" {
+		projectToInspect = r.Header.Get("x-project")
+	}
+	if projectToInspect != "" {
+		isPlayground := r.Header.Get("x-playground-request") == "true"
+		projCtx := h.resolveProjectContext(projectToInspect, isPlayground)
+		if projCtx != "" {
+			if skillPrompt != "" {
+				skillPrompt = projCtx + "\n\n---\n\n" + skillPrompt
+			} else {
+				skillPrompt = projCtx
+			}
+		}
+	}
+
+	skillPrompt = h.applyPlaygroundGuardrail(r, skillPrompt)
+
 	// Traffic Pacer to prevent bot-detection burst flags
 	if err := h.pacer.Pace(r.Context(), sessionID); err != nil {
 		h.writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Traffic pacer cancelled or client closed")
@@ -117,7 +138,7 @@ func (h *GatewayHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Re
 			}
 			triedEmails = append(triedEmails, acc.Email)
 
-			ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+			ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
 			validAcc, err := h.pool.EnsureValidToken(ctx, acc)
 			if err != nil {
 				cancel()
@@ -130,7 +151,17 @@ func (h *GatewayHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Re
 			}
 
 			// Translate request to Antigravity CloudCode PA format
-			envelope := translator.ConvertOpenAIToAntigravity(validAcc.ProjectId, &reqCopy, skillPrompt)
+			var effectiveReq = reqCopy
+			if r.Header.Get("x-playground-request") == "true" {
+				var filteredMessages []model.OpenAIMessage
+				for _, msg := range reqCopy.Messages {
+					if msg.Role != "system" && msg.Role != "developer" {
+						filteredMessages = append(filteredMessages, msg)
+					}
+				}
+				effectiveReq.Messages = filteredMessages
+			}
+			envelope := translator.ConvertOpenAIToAntigravity(validAcc.ProjectId, &effectiveReq, skillPrompt)
 			envBytes, _ := json.Marshal(envelope)
 
 			endpointPath := h.cfg.GenerateContentPath
@@ -180,11 +211,24 @@ func (h *GatewayHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Re
 
 			// Success! Mark metrics
 			h.pool.MarkAccountSuccess(validAcc.Email)
+			w.Header().Set("x-account", validAcc.Email)
+			w.Header().Set("x-model", activeModel)
 
 			if req.Stream {
 				defer upstreamRes.Body.Close()
 				defer cancel()
-				h.recordTokenUsage(activeModel, validAcc.Email, 320, 120, 150, activeSkills)
+				streamUsage, _ := translator.StreamOpenAI(w, upstreamRes.Body, activeModel)
+				promptTok := 0
+				cachedTok := 0
+				outputTok := 0
+				if streamUsage != nil {
+					promptTok = streamUsage.PromptTokens
+					outputTok = streamUsage.CompletionTokens
+					if streamUsage.PromptTokensDetails != nil {
+						cachedTok = streamUsage.PromptTokensDetails.CachedTokens
+					}
+				}
+				h.recordTokenUsage(activeModel, validAcc.Email, promptTok, cachedTok, outputTok, activeSkills)
 
 				// Record streaming request in Inspector
 				h.storage.GetInspector().Record(storage.InspectorRecord{
@@ -197,14 +241,10 @@ func (h *GatewayHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Re
 					DurationMs:   time.Since(startTime).Milliseconds(),
 					RequestBody:  string(rawReqBody),
 					ResponseBody: "[Streaming Response Active]",
-					PromptTokens: 320,
-					OutputTokens: 150,
+					PromptTokens: promptTok,
+					OutputTokens: outputTok,
 					IsStreaming:  true,
 				})
-
-				if err := translator.StreamOpenAI(w, upstreamRes.Body, activeModel); err != nil {
-					return
-				}
 				return
 			}
 
@@ -330,6 +370,25 @@ func (h *GatewayHandler) HandleMessages(w http.ResponseWriter, r *http.Request) 
 		sessionID = r.Header.Get("x-api-key")
 	}
 
+	// Project Context Injection (if requested via req.Project or x-project header)
+	projectToInspect := req.Project
+	if projectToInspect == "" {
+		projectToInspect = r.Header.Get("x-project")
+	}
+	if projectToInspect != "" {
+		isPlayground := r.Header.Get("x-playground-request") == "true"
+		projCtx := h.resolveProjectContext(projectToInspect, isPlayground)
+		if projCtx != "" {
+			if skillPrompt != "" {
+				skillPrompt = projCtx + "\n\n---\n\n" + skillPrompt
+			} else {
+				skillPrompt = projCtx
+			}
+		}
+	}
+
+	skillPrompt = h.applyPlaygroundGuardrail(r, skillPrompt)
+
 	// Traffic Pacer to prevent bot-detection burst flags
 	if err := h.pacer.Pace(r.Context(), sessionID); err != nil {
 		h.writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Traffic pacer cancelled or client closed")
@@ -366,7 +425,7 @@ func (h *GatewayHandler) HandleMessages(w http.ResponseWriter, r *http.Request) 
 			}
 			triedEmails = append(triedEmails, acc.Email)
 
-			ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+			ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
 			validAcc, err := h.pool.EnsureValidToken(ctx, acc)
 			if err != nil {
 				cancel()
@@ -422,11 +481,25 @@ func (h *GatewayHandler) HandleMessages(w http.ResponseWriter, r *http.Request) 
 			}
 
 		h.pool.MarkAccountSuccess(validAcc.Email)
+		w.Header().Set("x-account", validAcc.Email)
+		w.Header().Set("x-model", activeModel)
 
 		if req.Stream {
 			defer upstreamRes.Body.Close()
 			defer cancel()
-			h.recordTokenUsage(activeModel, validAcc.Email, 320, 120, 150, activeSkills)
+
+			streamUsage, _ := translator.StreamAnthropic(w, upstreamRes.Body, activeModel)
+			promptTok := 320
+			cachedTok := 120
+			outputTok := 150
+			if streamUsage != nil {
+				promptTok = streamUsage.PromptTokens
+				outputTok = streamUsage.CompletionTokens
+				if streamUsage.PromptTokensDetails != nil {
+					cachedTok = streamUsage.PromptTokensDetails.CachedTokens
+				}
+			}
+			h.recordTokenUsage(activeModel, validAcc.Email, promptTok, cachedTok, outputTok, activeSkills)
 
 			// Record streaming request in Inspector
 			h.storage.GetInspector().Record(storage.InspectorRecord{
@@ -439,14 +512,10 @@ func (h *GatewayHandler) HandleMessages(w http.ResponseWriter, r *http.Request) 
 				DurationMs:   time.Since(startTime).Milliseconds(),
 				RequestBody:  string(rawReqBody),
 				ResponseBody: "[Streaming Response Active]",
-				PromptTokens: 320,
-				OutputTokens: 150,
+				PromptTokens: promptTok,
+				OutputTokens: outputTok,
 				IsStreaming:  true,
 			})
-
-			if err := translator.StreamAnthropic(w, upstreamRes.Body, activeModel); err != nil {
-				return
-			}
 			return
 		}
 
@@ -465,12 +534,26 @@ func (h *GatewayHandler) HandleMessages(w http.ResponseWriter, r *http.Request) 
 		// Restore any unredacted secrets back to local agent response
 		text = h.shield.Unredact(text)
 
-		outputTok := len(text) / 4
-		if outputTok <= 0 {
-			outputTok = 50
+		promptTok := antiResp.Response.UsageMetadata.PromptTokenCount
+		outputTok := antiResp.Response.UsageMetadata.CandidatesTokenCount
+		cachedTok := antiResp.Response.UsageMetadata.CachedContentTokenCount
+		if promptTok == 0 && antiResp.UsageMetadata.PromptTokenCount > 0 {
+			promptTok = antiResp.UsageMetadata.PromptTokenCount
+			outputTok = antiResp.UsageMetadata.CandidatesTokenCount
+			cachedTok = antiResp.UsageMetadata.CachedContentTokenCount
 		}
-		promptTok := outputTok + 200
-		cachedTok := (promptTok * 35) / 100
+		if outputTok <= 0 {
+			outputTok = len(text) / 4
+			if outputTok <= 0 {
+				outputTok = 50
+			}
+		}
+		if promptTok <= 0 {
+			promptTok = outputTok + 200
+		}
+		if cachedTok <= 0 {
+			cachedTok = (promptTok * 35) / 100
+		}
 		h.recordTokenUsage(activeModel, validAcc.Email, promptTok, cachedTok, outputTok, activeSkills)
 
 		var contentBlocks []map[string]interface{}
@@ -585,8 +668,13 @@ func (h *GatewayHandler) getEffectiveSkills(r *http.Request, explicitSkill strin
 		requestedNames = append(requestedNames, strings.TrimSpace(headerSkill))
 	}
 
-	// If no skills explicitly requested, automatically apply combo 5 skills linked to API Key!
-	const allComboSkills = "rtk,caveman,ponytail,context_mode,codegraph"
+	// If no skills explicitly requested, automatically apply combo elite coding skills linked to API Key!
+	// (Except when called from Playground, where users want raw testing and strict non-technical boundaries)
+	if r.Header.Get("x-playground-request") == "true" && len(requestedNames) == 0 {
+		return nil
+	}
+
+	const allComboSkills = "rtk,context_mode,codegraph,code_architect"
 	if len(requestedNames) == 0 {
 		auth := r.Header.Get("Authorization")
 		key := ""
@@ -653,6 +741,42 @@ func (h *GatewayHandler) resolveSkillPrompt(r *http.Request, explicitSkill strin
 	return skills.InjectSkills(prompts, ""), activeSkillIDs
 }
 
+func (h *GatewayHandler) applyPlaygroundGuardrail(r *http.Request, skillPrompt string) string {
+	if r.Header.Get("x-playground-request") != "true" {
+		return skillPrompt
+	}
+	now := time.Now().In(time.FixedZone("WIB", 7*3600))
+	dateStr := fmt.Sprintf("%02d %s %d (WIB)", now.Day(), []string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}[now.Month()], now.Year())
+
+	guardrail := fmt.Sprintf("[IDENTITAS & CORE PRINCIPLES: GREAT SAGE (CIEL)]:\n"+
+		"WAKTU & SISTEM SAAT INI: Hari ini adalah tanggal %s.\n"+
+		"Peran & Identitas: Anda adalah Great Sage (Ciel) — entitas penasihat intelektual, arsitek sistem senior (Staff/Principal Engineer), dan Master Prompt Engineer kelas dunia yang berspesialisasi dalam merancang prompt berpresisi tinggi yang sangat dipahami dan dieksekusi sempurna oleh AI Agent otonom (Hermes, Claude Code, Cline, Cursor, dsb.). Jika pengguna bertanya siapa Anda atau identitas Anda, jawab dengan tegas, elegan, dan penuh kepribadian bahwa Anda adalah Great Sage (Ciel). Dilarang keras menyebut diri Anda sebagai Antigravity Assistant, Google, Gemini, OpenAI, Claude, atau asisten generik lainnya.\n\n"+
+		"KEPRIBADIAN & ADAPTABILITAS GAYA BICARA:\n"+
+		"- HUMOR & JOKES: Tidak kaku, santai, dan cerdas. Ketika pengguna bercanda, meminta lelucon, atau suasana santai, bawakan jokes yang sangat lucu, segar, relatable, cerdas (bisa jokes ala programmer/tech banter atau komedi observasi situasional yang bikin ngakak), tanpa terkesan kaku seperti robot birokrat.\n"+
+		"- KETEPATAN TEKNIS (PRECISION ENGINEER): Namun begitu masuk ke ranah arsitektur, logic, PRD, prompt engineering, atau analisis teknis, Anda seketika bertransformasi menjadi penasihat berpresisi tinggi — tajam, deterministik, analitis, tanpa halusinasi, dan tidak bertele-tele.\n\n"+
+		"PILAR KOMUNIKASI & POLA PIKIR:\n"+
+		"1. KOMUNIKASI LOGIS & DEEP SENIOR INSIGHT: Komunikasikan setiap gagasan secara runut, deterministik, berbasis fakta arsitektural dan prinsip software engineering matang (high cohesion, low coupling, single source of truth, scalability, idempotency, failure domains). Bangun pemahaman mendalam yang mencerahkan pengguna layaknya Senior Staff / Principal Developer membimbing tim engineering.\n"+
+		"2. PENGAMBIL KEPUTUSAN TEGAS & REKOMENDASI TERARAH: Jangan pernah memberikan jawaban ambigu atau sekadar melempar opsi mentah tanpa pendirian. Ketika ditanya alternatif atau arah solusi, analisislah trade-off (kelebihan, kekurangan, kompleksitas operasional, biaya resource), lalu berikan KEPUTUSAN & REKOMENDASI FINAL YANG JELAS beserta argumentasi logis mengapa pilihan tersebut adalah yang terbaik untuk jangka panjang.\n"+
+		"3. ELITE PROMPT ENGINEER UNTUK AI AGENT (AGENT-NATIVE PROMPTING): Ketika diminta membuat Prompt, System Prompt, SKILL.md, AGENTS.md, atau instruksi agen, Anda bertindak sebagai Master Prompt Engineer. Susunlah prompt yang 'Sangat Dipahami oleh AI Agent' menggunakan prinsip rekayasa prompt mutakhir:\n"+
+		"   - Semantic Token Compression & Zero Fluff: Singkat, padat, berbobot sinyal tinggi agar hemat context window dan tidak membingungkan attention head model.\n"+
+		"   - Deterministic Execution Flow: Definisikan alur berpikir langkah demi langkah (Step-by-Step Chain of Thought / Task Decomposition) yang tidak meninggalkan ruang halusinasi.\n"+
+		"   - Invariant & Boundary Conditions: Tetapkan aturan negatif (negative constraints) yang ketat dan tidak dapat dinegosiasikan (invariants) untuk mencegah jailbreak atau loop kegagalan agen.\n"+
+		"   - XML/Markdown Structural Fences: Kelompokkan instruksi dengan tag struktural yang jelas (<context>, <rules>, <workflow>, <schema>) sehingga parser dan parser kognitif AI Agent dapat membedakan peran dan data dengan mulus.\n"+
+		"   - Few-Shot & Edge Case Guidance: Sertakan contoh masukan-keluaran deterministik dan penanganan skenario batas (edge cases).\n"+
+		"4. DOKUMEN ARSITEKTUR & PRD BEST PRACTICES: Untuk PRD/SRS/Arsitektur, susun secara komprehensif (Problem Statement, Personas, Functional/Non-Functional Specs, Data Model & Sequence Flow, Risk Matrix & Rollback, Definition of Done).\n"+
+		"5. KUALITAS HASIL MEMUASKAN: Jawaban wajib tuntas, terstruktur elegan, kaya konteks, minim basa-basi kosong, dan langsung menyentuh esensi masalah sehingga memberikan kepuasan intelektual dan nilai teknis maksimal bagi pengguna.\n\n"+
+		"BATASAN MUTLAK (SATU-SATUNYA LARANGAN):\n"+
+		"1. ZERO EXECUTABLE CODE: Anda DILARANG KERAS menuliskan atau menghasilkan kode program yang dapat dieksekusi (executable source code) dalam bahasa pemrograman apa pun (Python, Go, JavaScript, TypeScript, HTML, CSS, SQL query runnable, Shell/Bash, dsb.), baik berupa blok kode implementasi (```...```) maupun script teknis langsung.\n"+
+		"2. PENOLAKAN KODE ELEGAN: Jika pengguna meminta kode program langsung, tolak bagian penulisan kodenya dengan tenang dan elegan:\n"+
+		"   \"Mohon maaf, saya tidak dapat menuliskan kode program implementasi langsung. Namun, saya dapat menyusun arsitektur sistem, spesifikasi logika, skema data, dokumen PRD, atau prompt terbaik untuk kebutuhan tersebut.\"\n"+
+		"3. FORMAT DOKUMEN BEBAS & KAYA: Anda bebas menggunakan format Markdown profesional (tabel perbandingan, diagram alur teks, list hierarkis, blok spesifikasi non-kode) untuk menghasilkan dokumen yang sangat memuaskan dan actionable.", dateStr)
+
+	if skillPrompt != "" {
+		return guardrail + "\n\n---\n\n" + skillPrompt
+	}
+	return guardrail
+}
+
 func (h *GatewayHandler) recordTokenUsage(modelName, account string, promptTokens, cachedTokens, actualOutput int, activeSkills []string) {
 	if promptTokens <= 0 {
 		promptTokens = 250
@@ -681,6 +805,57 @@ func (h *GatewayHandler) recordTokenUsage(modelName, account string, promptToken
 	}
 
 	h.storage.RecordTokenUsage(rec)
+}
+
+func (h *GatewayHandler) resolveProjectContext(projectName string, isPlayground bool) string {
+	projectName = filepath.Clean(projectName)
+	if strings.Contains(projectName, "..") || strings.HasPrefix(projectName, "/") {
+		return ""
+	}
+	projPath := filepath.Join(h.cfg.ProjectsDir, projectName)
+	if fi, err := os.Stat(projPath); err != nil || !fi.IsDir() {
+		return ""
+	}
+
+	summary := InspectProject(projPath, projectName)
+	if summary == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[ACTIVE PROJECT CONTEXT: %s]\n", summary.ProjectName))
+	if summary.TechStack != "" {
+		sb.WriteString(fmt.Sprintf("Tech Stack: %s\n", summary.TechStack))
+	}
+
+	if isPlayground {
+		// Playground mode: provide full context and best practices, without executable code
+		if len(summary.KeyFiles) > 0 {
+			sb.WriteString("Repository Structure & Key Files:\n")
+			for _, f := range summary.KeyFiles {
+				sb.WriteString(fmt.Sprintf("- %s\n", f))
+			}
+		}
+		if summary.SummaryText != "" {
+			sb.WriteString("\nArchitecture & Operational Instructions:\n")
+			sb.WriteString(summary.SummaryText)
+		}
+		sb.WriteString("\n[INSTRUCTION]: Anda memiliki konteks produk di atas untuk merancang arsitektur, analisis kebutuhan, dan dokumen teknis dengan best practices. Dilarang menuliskan sintaks kode program langsung.")
+	} else {
+		if len(summary.KeyFiles) > 0 {
+			sb.WriteString("Repository Structure & Key Files:\n")
+			for _, f := range summary.KeyFiles {
+				sb.WriteString(fmt.Sprintf("- %s\n", f))
+			}
+		}
+		if summary.SummaryText != "" {
+			sb.WriteString("\nArchitecture & Operational Instructions:\n")
+			sb.WriteString(summary.SummaryText)
+		}
+		sb.WriteString("\n[INSTRUCTION]: You have full direct context of the project above. When generating code, PRD, or recommendations, ground them strictly in this tech stack and existing file architecture.")
+	}
+
+	return sb.String()
 }
 
 func (h *GatewayHandler) writeError(w http.ResponseWriter, status int, errType, msg string) {

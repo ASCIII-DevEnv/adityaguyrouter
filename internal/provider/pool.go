@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"sort"
@@ -83,18 +84,51 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 		}
 		if strings.HasPrefix(reqModel, "gemini-") {
 			if gemFam, ok := acc.Families["gemini"]; ok {
-				if gemFam.LimitWeekly.RemainingPercent == 0.0 {
+				if (gemFam.LimitWeekly.DisplayName != "" || gemFam.LimitWeekly.ResetAt != "") && gemFam.LimitWeekly.RemainingPercent == 0.0 {
+					return true
+				}
+				if (gemFam.Limit5h.DisplayName != "" || gemFam.Limit5h.ResetAt != "") && gemFam.Limit5h.RemainingPercent == 0.0 {
 					return true
 				}
 			}
 		} else if strings.HasPrefix(reqModel, "claude-") || strings.HasPrefix(reqModel, "gpt-") {
 			if claudeFam, ok := acc.Families["claude"]; ok {
-				if claudeFam.LimitWeekly.RemainingPercent == 0.0 {
+				if (claudeFam.LimitWeekly.DisplayName != "" || claudeFam.LimitWeekly.ResetAt != "") && claudeFam.LimitWeekly.RemainingPercent == 0.0 {
+					return true
+				}
+				if (claudeFam.Limit5h.DisplayName != "" || claudeFam.Limit5h.ResetAt != "") && claudeFam.Limit5h.RemainingPercent == 0.0 {
 					return true
 				}
 			}
 		}
 		return false
+	}
+
+	getAccountModelQuota := func(acc *model.Account) (q5h, qWeekly float64) {
+		q5h = acc.Quota5hPercent
+		qWeekly = acc.QuotaWeeklyPercent
+		if reqModel != "" && acc.Families != nil {
+			if strings.HasPrefix(reqModel, "gemini-") {
+				if gemFam, ok := acc.Families["gemini"]; ok {
+					if gemFam.Limit5h.DisplayName != "" || gemFam.Limit5h.ResetAt != "" {
+						q5h = gemFam.Limit5h.RemainingPercent
+					}
+					if gemFam.LimitWeekly.DisplayName != "" || gemFam.LimitWeekly.ResetAt != "" {
+						qWeekly = gemFam.LimitWeekly.RemainingPercent
+					}
+				}
+			} else if strings.HasPrefix(reqModel, "claude-") || strings.HasPrefix(reqModel, "gpt-") {
+				if claudeFam, ok := acc.Families["claude"]; ok {
+					if claudeFam.Limit5h.DisplayName != "" || claudeFam.Limit5h.ResetAt != "" {
+						q5h = claudeFam.Limit5h.RemainingPercent
+					}
+					if claudeFam.LimitWeekly.DisplayName != "" || claudeFam.LimitWeekly.ResetAt != "" {
+						qWeekly = claudeFam.LimitWeekly.RemainingPercent
+					}
+				}
+			}
+		}
+		return q5h, qWeekly
 	}
 
 	// 0. Explicit Target Account Override (for testing specific account in Playground)
@@ -113,6 +147,7 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 	now := time.Now()
 
 	// 1. Check Session Affinity (if conversation session key matches and account is healthy)
+	strategy := p.storage.GetProviderStrategy()
 	if sessionID != "" {
 		p.sessionsMu.RLock()
 		targetEmail, hasAffinity := p.sessions[sessionID]
@@ -121,9 +156,14 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 		if hasAffinity && !excluded[targetEmail] {
 			for _, acc := range accounts {
 				if acc.Email == targetEmail && acc.IsActive && now.After(acc.CooldownUntil) && !isModelExhausted(acc) {
+					if strategy == "fill_first" {
+						// In fill_first, keep session affinity as long as account has not hit 0%
+						return acc, nil
+					}
 					// Check if account has safe remaining quota (> 15%) to maintain prompt cache affinity
-					hasQuota5h := acc.Quota5hPercent == 0 || acc.Quota5hPercent > 15.0
-					hasQuotaWeekly := acc.QuotaWeeklyPercent == 0 || acc.QuotaWeeklyPercent > 15.0
+					q5h, qWk := getAccountModelQuota(acc)
+					hasQuota5h := q5h == 0 || q5h > 15.0
+					hasQuotaWeekly := qWk == 0 || qWk > 15.0
 					if hasQuota5h && hasQuotaWeekly {
 						return acc, nil
 					}
@@ -142,12 +182,14 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 		if now.Before(acc.CooldownUntil) {
 			continue
 		}
-		// Preemptive Parking: Let account sleep before reaching 0% so rolling 5h window recovers
-		if acc.Quota5hPercent > 0 && acc.Quota5hPercent < 15.0 {
-			continue
-		}
-		if acc.QuotaWeeklyPercent > 0 && acc.QuotaWeeklyPercent < 15.0 {
-			continue
+		// Preemptive Parking:
+		// In "fill_first" strategy, use account down to 0% before switching.
+		// In "smart_quota" or other strategies, let account sleep before reaching 0% (> 15% safe margin).
+		if strategy != "fill_first" {
+			q5h, qWk := getAccountModelQuota(acc)
+			if (q5h > 0 || qWk > 0) && (q5h < 15.0 || qWk < 15.0) {
+				continue
+			}
 		}
 		candidates = append(candidates, acc)
 	}
@@ -156,7 +198,8 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 		// Fallback 1: Any active account whose cooldown has expired, remaining quota > 5%, and model not 0%
 		for _, acc := range accounts {
 			if acc.IsActive && now.After(acc.CooldownUntil) && !excluded[acc.Email] && !isModelExhausted(acc) {
-				if (acc.Quota5hPercent == 0 || acc.Quota5hPercent > 5.0) && (acc.QuotaWeeklyPercent == 0 || acc.QuotaWeeklyPercent > 5.0) {
+				q5h, qWk := getAccountModelQuota(acc)
+				if (q5h == 0 || q5h > 5.0) && (qWk == 0 || qWk > 5.0) {
 					candidates = append(candidates, acc)
 				}
 			}
@@ -189,7 +232,6 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 	}
 
 	// 3. Routing Strategy Sorting:
-	strategy := p.storage.GetProviderStrategy()
 	switch strategy {
 	case "fill_first":
 		// Prioritize manual order / stable order first. If candidate[i] has safe quota, keep using it completely until 429
@@ -199,29 +241,18 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 			}
 			return candidates[i].Email < candidates[j].Email
 		})
-	case "round_robin":
-		// Pick least recently used
-		sort.Slice(candidates, func(i, j int) bool {
-			return candidates[i].LastUsedAt.Before(candidates[j].LastUsedAt)
-		})
-	case "least_used":
-		// Pick lowest total requests
-		sort.Slice(candidates, func(i, j int) bool {
-			if candidates[i].TotalRequests != candidates[j].TotalRequests {
-				return candidates[i].TotalRequests < candidates[j].TotalRequests
-			}
-			return candidates[i].LastUsedAt.Before(candidates[j].LastUsedAt)
-		})
 	default: // "smart_quota"
 		// Prioritize highest remaining quota bottleneck, penalize errors, tie-breaker idle longest
 		sort.Slice(candidates, func(i, j int) bool {
-			minQuotaI := candidates[i].Quota5hPercent
-			if candidates[i].QuotaWeeklyPercent > 0 && candidates[i].QuotaWeeklyPercent < minQuotaI {
-				minQuotaI = candidates[i].QuotaWeeklyPercent
+			q5hI, qWkI := getAccountModelQuota(candidates[i])
+			minQuotaI := q5hI
+			if qWkI > 0 && qWkI < minQuotaI {
+				minQuotaI = qWkI
 			}
-			minQuotaJ := candidates[j].Quota5hPercent
-			if candidates[j].QuotaWeeklyPercent > 0 && candidates[j].QuotaWeeklyPercent < minQuotaJ {
-				minQuotaJ = candidates[j].QuotaWeeklyPercent
+			q5hJ, qWkJ := getAccountModelQuota(candidates[j])
+			minQuotaJ := q5hJ
+			if qWkJ > 0 && qWkJ < minQuotaJ {
+				minQuotaJ = qWkJ
 			}
 
 			scoreI := minQuotaI - float64(candidates[i].ConsecutiveErrors*30)
@@ -247,8 +278,11 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 }
 
 func (p *AccountPool) applyHumanJitter() {
-	jitterMs := 150 + rand.Intn(200)
-	time.Sleep(time.Duration(jitterMs) * time.Millisecond)
+	// Minimal realistic jitter (0-25ms) to prevent artificial waiting while avoiding lockstep
+	jitterMs := rand.Intn(25)
+	if jitterMs > 0 {
+		time.Sleep(time.Duration(jitterMs) * time.Millisecond)
+	}
 }
 
 // EnsureValidToken refreshes access token if expired with double-checked locking
@@ -324,13 +358,28 @@ func (p *AccountPool) MarkAccountAuthError(email string, reason string) {
 // RefreshAllQuotas updates quota metrics for all stored accounts
 func (p *AccountPool) RefreshAllQuotas(ctx context.Context) {
 	accounts := p.storage.GetAccounts()
-	for _, acc := range accounts {
-		validAcc, err := p.EnsureValidToken(ctx, acc)
-		if err != nil {
-			continue
-		}
-		p.FetchAccountQuota(ctx, validAcc)
+	if len(accounts) == 0 {
+		return
 	}
+	var wg sync.WaitGroup
+	for _, acc := range accounts {
+		wg.Add(1)
+		go func(a *model.Account) {
+			defer wg.Done()
+			accCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+			defer cancel()
+			validAcc, err := p.EnsureValidToken(accCtx, a)
+			if err != nil {
+				return
+			}
+			p.FetchAccountQuota(accCtx, validAcc)
+			if time.Now().After(validAcc.CooldownUntil) {
+				validAcc.CooldownReason = ""
+				_ = p.storage.UpsertAccount(validAcc)
+			}
+		}(acc)
+	}
+	wg.Wait()
 }
 
 // FetchAccountQuota queries Google for 5h and weekly quota summary, plus per-model quota
@@ -348,19 +397,12 @@ func (p *AccountPool) FetchAccountQuota(ctx context.Context, acc *model.Account)
 		} `json:"buckets"`
 	}
 
+	quotaSummarySucceeded := false
 	if err == nil && res.StatusCode == http.StatusOK {
-		raw, _ := io.ReadAll(res.Body)
+		raw, readErr := io.ReadAll(res.Body)
 		res.Body.Close()
-		var sData struct {
-			Groups []struct {
-				DisplayName string `json:"displayName"`
-				Buckets     []struct {
-					RemainingFraction float64 `json:"remainingFraction"`
-					Window            string  `json:"window"`
-					ResetTime         string  `json:"resetTime"`
-				} `json:"buckets"`
-			} `json:"groups"`
-			QuotaSummary struct {
+		if readErr == nil {
+			var sData struct {
 				Groups []struct {
 					DisplayName string `json:"displayName"`
 					Buckets     []struct {
@@ -369,86 +411,138 @@ func (p *AccountPool) FetchAccountQuota(ctx context.Context, acc *model.Account)
 						ResetTime         string  `json:"resetTime"`
 					} `json:"buckets"`
 				} `json:"groups"`
-			} `json:"quotaSummary"`
-		}
-		if err := json.Unmarshal(raw, &sData); err == nil {
-			if len(sData.Groups) > 0 {
-				summaryGroups = sData.Groups
-			} else {
-				summaryGroups = sData.QuotaSummary.Groups
+				QuotaSummary struct {
+					Groups []struct {
+						DisplayName string `json:"displayName"`
+						Buckets     []struct {
+							RemainingFraction float64 `json:"remainingFraction"`
+							Window            string  `json:"window"`
+							ResetTime         string  `json:"resetTime"`
+						} `json:"buckets"`
+					} `json:"groups"`
+				} `json:"quotaSummary"`
+			}
+			if err := json.Unmarshal(raw, &sData); err == nil {
+				if len(sData.Groups) > 0 {
+					summaryGroups = sData.Groups
+					quotaSummarySucceeded = true
+				} else if len(sData.QuotaSummary.Groups) > 0 {
+					summaryGroups = sData.QuotaSummary.Groups
+					quotaSummarySucceeded = true
+				}
 			}
 		}
-	} else if res != nil {
-		res.Body.Close()
+	} else {
+		if res != nil {
+			res.Body.Close()
+			log.Printf("[Quota] Failed to fetch quota summary for %s: HTTP %d", acc.Email, res.StatusCode)
+		} else if err != nil {
+			log.Printf("[Quota] Failed to fetch quota summary for %s: %v", acc.Email, err)
+		}
 	}
 
 	var session5hBuckets []model.FamilyLimit
 	var weeklyBuckets []model.FamilyLimit
 
-	for _, g := range summaryGroups {
-		for _, b := range g.Buckets {
-			w := strings.ToLower(b.Window)
-			pct := b.RemainingFraction * 100.0
-			fl := model.FamilyLimit{
-				DisplayName:      g.DisplayName,
-				RemainingPercent: pct,
-				ResetAt:          b.ResetTime,
+	if quotaSummarySucceeded {
+		var min5h, minWk float64
+		var min5hReset, minWkReset string
+		first5h := true
+		firstWk := true
+
+		for _, g := range summaryGroups {
+			for _, b := range g.Buckets {
+				w := strings.ToLower(b.Window)
+				pct := b.RemainingFraction * 100.0
+				fl := model.FamilyLimit{
+					DisplayName:      g.DisplayName,
+					RemainingPercent: pct,
+					ResetAt:          b.ResetTime,
+				}
+				if strings.Contains(w, "5h") || strings.Contains(w, "session") || strings.Contains(w, "daily") {
+					session5hBuckets = append(session5hBuckets, fl)
+					if first5h || pct < min5h {
+						min5h = pct
+						min5hReset = b.ResetTime
+						first5h = false
+					}
+				} else if strings.Contains(w, "7d") || strings.Contains(w, "week") {
+					weeklyBuckets = append(weeklyBuckets, fl)
+					if firstWk || pct < minWk {
+						minWk = pct
+						minWkReset = b.ResetTime
+						firstWk = false
+					}
+				}
 			}
-			if strings.Contains(w, "5h") || strings.Contains(w, "session") || strings.Contains(w, "daily") {
-				session5hBuckets = append(session5hBuckets, fl)
-				acc.Quota5hPercent = pct
-				acc.Quota5hResetAt = b.ResetTime
-			} else if strings.Contains(w, "7d") || strings.Contains(w, "week") {
-				weeklyBuckets = append(weeklyBuckets, fl)
-				acc.QuotaWeeklyPercent = pct
-				acc.QuotaWeeklyResetAt = b.ResetTime
-			}
+		}
+
+		if !first5h {
+			acc.Quota5hPercent = min5h
+			acc.Quota5hResetAt = min5hReset
+		}
+		if !firstWk {
+			acc.QuotaWeeklyPercent = minWk
+			acc.QuotaWeeklyResetAt = minWkReset
 		}
 	}
 
 	// 2. Fetch Available Models
 	var modelsList []model.ModelQuotaDetail
+	modelsSucceeded := false
 	mRes, mErr := p.client.CallCloudCode(ctx, p.cfg.ModelsPath, acc.AccessToken, acc.ProjectId, body)
 	if mErr == nil && mRes.StatusCode == http.StatusOK {
-		raw, _ := io.ReadAll(mRes.Body)
+		raw, mReadErr := io.ReadAll(mRes.Body)
 		mRes.Body.Close()
-
-		var mData struct {
-			Models map[string]struct {
-				DisplayName string `json:"displayName"`
-				IsInternal  bool   `json:"isInternal"`
-				QuotaInfo   struct {
-					RemainingFraction float64 `json:"remainingFraction"`
-					ResetTime         string  `json:"resetTime"`
-				} `json:"quotaInfo"`
-			} `json:"models"`
-		}
-		if err := json.Unmarshal(raw, &mData); err == nil && mData.Models != nil {
-			for id, info := range mData.Models {
-				if info.IsInternal || strings.HasPrefix(id, "tab_") || strings.HasPrefix(id, "chat_") || id == "gemini-2.5-pro" || id == "gemini-3.1-pro" {
-					continue
+		if mReadErr == nil {
+			var mData struct {
+				Models map[string]struct {
+					DisplayName string `json:"displayName"`
+					IsInternal  bool   `json:"isInternal"`
+					QuotaInfo   struct {
+						RemainingFraction float64 `json:"remainingFraction"`
+						ResetTime         string  `json:"resetTime"`
+					} `json:"quotaInfo"`
+				} `json:"models"`
+			}
+			if err := json.Unmarshal(raw, &mData); err == nil && mData.Models != nil {
+				for id, info := range mData.Models {
+					if info.IsInternal || strings.HasPrefix(id, "tab_") || strings.HasPrefix(id, "chat_") || id == "gemini-2.5-pro" || id == "gemini-3.1-pro" {
+						continue
+					}
+					dName := info.DisplayName
+					if dName == "" {
+						dName = id
+					}
+					// Claude v4.6 standard naming
+					if strings.Contains(strings.ToLower(id), "claude-sonnet") {
+						dName = "Claude Sonnet 4.6 (Thinking)"
+					} else if strings.Contains(strings.ToLower(id), "claude-opus") {
+						dName = "Claude Opus 4.6 (Thinking)"
+					}
+					pct := info.QuotaInfo.RemainingFraction * 100.0
+					modelsList = append(modelsList, model.ModelQuotaDetail{
+						ID:               id,
+						DisplayName:      dName,
+						RemainingPercent: pct,
+						ResetAt:          info.QuotaInfo.ResetTime,
+					})
 				}
-				dName := info.DisplayName
-				if dName == "" {
-					dName = id
-				}
-				// Claude v4.6 standard naming
-				if strings.Contains(strings.ToLower(id), "claude-sonnet") {
-					dName = "Claude Sonnet 4.6 (Thinking)"
-				} else if strings.Contains(strings.ToLower(id), "claude-opus") {
-					dName = "Claude Opus 4.6 (Thinking)"
-				}
-				pct := info.QuotaInfo.RemainingFraction * 100.0
-				modelsList = append(modelsList, model.ModelQuotaDetail{
-					ID:               id,
-					DisplayName:      dName,
-					RemainingPercent: pct,
-					ResetAt:          info.QuotaInfo.ResetTime,
-				})
+				modelsSucceeded = true
 			}
 		}
-	} else if mRes != nil {
-		mRes.Body.Close()
+	} else {
+		if mRes != nil {
+			mRes.Body.Close()
+			log.Printf("[Quota] Failed to fetch models for %s: HTTP %d", acc.Email, mRes.StatusCode)
+		} else if mErr != nil {
+			log.Printf("[Quota] Failed to fetch models for %s: %v", acc.Email, mErr)
+		}
+	}
+
+	// If models request failed but we previously had models, preserve them
+	if !modelsSucceeded && len(acc.ModelsList) > 0 {
+		modelsList = acc.ModelsList
 	}
 
 	// Separate into Gemini & Claude families
@@ -464,7 +558,7 @@ func (p *AccountPool) FetchAccountQuota(ctx context.Context, acc *model.Account)
 		}
 	}
 
-	// Find family limits
+	// Find family limits from quota summary
 	var gem5h, gemWk, cl5h, clWk model.FamilyLimit
 	for _, b := range session5hBuckets {
 		if strings.Contains(strings.ToLower(b.DisplayName), "gemini") {
@@ -481,31 +575,54 @@ func (p *AccountPool) FetchAccountQuota(ctx context.Context, acc *model.Account)
 		}
 	}
 
-	if gem5h.DisplayName == "" && len(geminiModels) > 0 {
-		gem5h = model.FamilyLimit{DisplayName: "Gemini 5 Jam", RemainingPercent: geminiModels[0].RemainingPercent, ResetAt: geminiModels[0].ResetAt}
+	// Fallback to model-level quota or account quota if family limit wasn't found in summary
+	if gem5h.DisplayName == "" {
+		if len(geminiModels) > 0 {
+			gem5h = model.FamilyLimit{DisplayName: "Gemini 5 Jam", RemainingPercent: geminiModels[0].RemainingPercent, ResetAt: geminiModels[0].ResetAt}
+		} else if acc.Quota5hPercent > 0 {
+			gem5h = model.FamilyLimit{DisplayName: "Gemini 5 Jam", RemainingPercent: acc.Quota5hPercent, ResetAt: acc.Quota5hResetAt}
+		}
 	}
-	if cl5h.DisplayName == "" && len(claudeModels) > 0 {
-		cl5h = model.FamilyLimit{DisplayName: "Claude 5 Jam", RemainingPercent: claudeModels[0].RemainingPercent, ResetAt: claudeModels[0].ResetAt}
+	if gemWk.DisplayName == "" && acc.QuotaWeeklyPercent > 0 {
+		gemWk = model.FamilyLimit{DisplayName: "Gemini Mingguan", RemainingPercent: acc.QuotaWeeklyPercent, ResetAt: acc.QuotaWeeklyResetAt}
 	}
 
-	acc.Families = map[string]model.Family{
-		"gemini": {
-			ID:          "gemini",
-			Name:        "Gemini Models",
-			Limit5h:     gem5h,
-			LimitWeekly: gemWk,
-			Models:      geminiModels,
-		},
-		"claude": {
-			ID:          "claude",
-			Name:        "Claude Models",
-			Limit5h:     cl5h,
-			LimitWeekly: clWk,
-			Models:      claudeModels,
-		},
+	if cl5h.DisplayName == "" {
+		if len(claudeModels) > 0 {
+			cl5h = model.FamilyLimit{DisplayName: "Claude 5 Jam", RemainingPercent: claudeModels[0].RemainingPercent, ResetAt: claudeModels[0].ResetAt}
+		} else if acc.Quota5hPercent > 0 {
+			cl5h = model.FamilyLimit{DisplayName: "Claude 5 Jam", RemainingPercent: acc.Quota5hPercent, ResetAt: acc.Quota5hResetAt}
+		}
 	}
-	acc.ModelsList = modelsList
-	acc.QuotaFetchedAt = time.Now()
+	if clWk.DisplayName == "" && acc.QuotaWeeklyPercent > 0 {
+		clWk = model.FamilyLimit{DisplayName: "Claude Mingguan", RemainingPercent: acc.QuotaWeeklyPercent, ResetAt: acc.QuotaWeeklyResetAt}
+	}
+
+	// Only update families if we succeeded in fetching summary or models, or if families is currently empty
+	if quotaSummarySucceeded || modelsSucceeded || acc.Families == nil {
+		acc.Families = map[string]model.Family{
+			"gemini": {
+				ID:          "gemini",
+				Name:        "Gemini Models",
+				Limit5h:     gem5h,
+				LimitWeekly: gemWk,
+				Models:      geminiModels,
+			},
+			"claude": {
+				ID:          "claude",
+				Name:        "Claude Models",
+				Limit5h:     cl5h,
+				LimitWeekly: clWk,
+				Models:      claudeModels,
+			},
+		}
+	}
+	if modelsSucceeded {
+		acc.ModelsList = modelsList
+	}
+	if quotaSummarySucceeded || modelsSucceeded {
+		acc.QuotaFetchedAt = time.Now()
+	}
 	_ = p.storage.UpsertAccount(acc)
 }
 

@@ -1,0 +1,78 @@
+<!-- TAB: SKILLS & PROMPT RULES MANAGER -->
+<div class="glass-panel p-5 sm:p-6 space-y-6">
+  <!-- Header Bar -->
+  <div class="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-slate-200/80">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
+        <svg class="w-5 h-5"><use href="#icon-zap"></use></svg>
+      </div>
+      <div>
+        <h2 class="text-base sm:text-lg font-extrabold text-slate-900">Manajemen Skills &amp; Prompt Rules</h2>
+        <p class="text-xs text-slate-500">Katalog aturan kompresi token saver, deskripsi teknis, dan injeksi prompt otomatis ke klien API</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-outline text-xs px-3 py-2 flex items-center gap-1.5" onclick="resetBuiltinSkills()">
+        <svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg>
+        <span>Reset Built-in</span>
+      </button>
+      <button class="btn btn-primary text-xs px-3.5 py-2 flex items-center gap-1.5" onclick="openCreateSkillModal()">
+        <svg class="w-3.5 h-3.5"><use href="#icon-plus"></use></svg>
+        <span>Tambah Skill Kustom</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Skill Summary Banner -->
+  <div class="p-4 rounded-2xl bg-gradient-to-r from-purple-50/80 via-white to-blue-50/60 border border-purple-100/90 text-xs text-slate-600 flex items-center justify-between flex-wrap gap-3">
+    <div class="flex items-center gap-2">
+      <span class="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+      <span>Skills aktif akan secara otomatis <strong>disuntikkan ke instruksi sistem</strong> model pada setiap request gateway untuk menghemat 60%–85% token output.</span>
+    </div>
+    <div class="font-mono text-purple-700 font-bold" id="skillsActiveCounter">Memuat skills...</div>
+  </div>
+
+  <!-- Skills Card Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="skillsManagerGrid">
+    <div class="p-8 text-center text-slate-400 col-span-full">Memuat katalog skills...</div>
+  </div>
+</div>
+
+<!-- Modal: Create / Edit Custom Skill -->
+<div id="modalCreateSkill" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs hidden flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg p-6 space-y-4">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+      <h3 class="text-base font-extrabold text-slate-900 flex items-center gap-2">
+        <svg class="w-4 h-4 text-purple-600"><use href="#icon-plus"></use></svg>
+        Tambah Custom Skill
+      </h3>
+      <button class="text-slate-400 hover:text-slate-600 p-1" onclick="closeCreateSkillModal()">
+        <svg class="w-4 h-4"><use href="#icon-x"></use></svg>
+      </button>
+    </div>
+
+    <div class="space-y-3 text-xs">
+      <div>
+        <label class="font-bold text-slate-700 uppercase tracking-wider text-[11px] block mb-1">ID Skill (Huruf kecil &amp; underscore)</label>
+        <input type="text" id="newSkillId" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono" placeholder="contoh: json_only, formal_id">
+      </div>
+      <div>
+        <label class="font-bold text-slate-700 uppercase tracking-wider text-[11px] block mb-1">Nama Tampilan</label>
+        <input type="text" id="newSkillName" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20" placeholder="contoh: JSON Only Responder">
+      </div>
+      <div>
+        <label class="font-bold text-slate-700 uppercase tracking-wider text-[11px] block mb-1">Deskripsi Singkat</label>
+        <input type="text" id="newSkillDesc" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20" placeholder="Jelaskan peran instruksi ini...">
+      </div>
+      <div>
+        <label class="font-bold text-slate-700 uppercase tracking-wider text-[11px] block mb-1">Prompt Template (Instruksi Sistem yang Disuntikkan)</label>
+        <textarea id="newSkillTemplate" rows="4" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono text-[11px]" placeholder="Instruksi spesifik yang wajib dipatuhi AI..."></textarea>
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+      <button class="btn btn-outline text-xs px-3 py-1.5" onclick="closeCreateSkillModal()">Batal</button>
+      <button class="btn btn-primary text-xs px-4 py-1.5" onclick="submitCreateSkill()">Simpan Skill</button>
+    </div>
+  </div>
+</div>

@@ -8,6 +8,7 @@ type Account struct {
 	Name           string    `json:"name,omitempty"`
 	Picture        string    `json:"picture,omitempty"`
 	Tier           string    `json:"tier,omitempty"`
+	Provider       string    `json:"provider,omitempty"`
 	ProjectId      string    `json:"projectId,omitempty"`
 	AccessToken    string    `json:"accessToken"`
 	RefreshToken   string    `json:"refreshToken"`
@@ -93,6 +94,22 @@ type FallbackConfig struct {
 	Rules   map[string][]string `json:"rules"` // originalModel -> []fallbackModels
 }
 
+// ProjectInfo represents a local project folder in PROJECTS_DIR
+type ProjectInfo struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	TechStack   string `json:"techStack,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// ProjectContextSummary represents structured context extracted from project files
+type ProjectContextSummary struct {
+	ProjectName string   `json:"projectName"`
+	TechStack   string   `json:"techStack"`
+	KeyFiles    []string `json:"keyFiles"`
+	SummaryText string   `json:"summaryText"`
+}
+
 // OpenAI Protocol Structs
 type OpenAIToolFunction struct {
 	Name        string      `json:"name"`
@@ -140,7 +157,8 @@ type OpenAIChatRequest struct {
 	ToolChoice     interface{}     `json:"tool_choice,omitempty"`
 	Skill          string          `json:"skill,omitempty"`   // Custom gateway param
 	Skills         []string        `json:"skills,omitempty"`  // Custom combo skills
-	Account        string          `json:"account,omitempty"` // Target account
+	Account         string          `json:"account,omitempty"` // Target account
+	Project         string          `json:"project,omitempty"` // Context project folder (optional)
 }
 
 type OpenAIChoice struct {
@@ -171,12 +189,29 @@ type OpenAIStreamChoice struct {
 	FinishReason *string           `json:"finish_reason"`
 }
 
+type OpenAIUsage struct {
+	PromptTokens            int                  `json:"prompt_tokens"`
+	CompletionTokens        int                  `json:"completion_tokens"`
+	TotalTokens             int                  `json:"total_tokens"`
+	PromptTokensDetails     *PromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *CompTokensDetails   `json:"completion_tokens_details,omitempty"`
+}
+
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type CompTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
 type OpenAIStreamChunk struct {
 	ID      string               `json:"id"`
 	Object  string               `json:"object"`
 	Created int64                `json:"created"`
 	Model   string               `json:"model"`
 	Choices []OpenAIStreamChoice `json:"choices"`
+	Usage   *OpenAIUsage         `json:"usage,omitempty"`
 }
 
 // Anthropic Protocol Structs
@@ -208,6 +243,7 @@ type AnthropicRequest struct {
 	Skill           string             `json:"skill,omitempty"`
 	Skills          []string           `json:"skills,omitempty"`
 	Account         string             `json:"account,omitempty"`
+	Project         string             `json:"project,omitempty"`
 }
 
 type AnthropicResponse struct {
@@ -281,5 +317,5 @@ type TokenAnalyticsResponse struct {
 }
 
 type ProviderStrategyConfig struct {
-	Strategy string `json:"strategy"` // "smart_quota", "fill_first", "round_robin", "least_used"
+	Strategy string `json:"strategy"` // "smart_quota", "fill_first"
 }

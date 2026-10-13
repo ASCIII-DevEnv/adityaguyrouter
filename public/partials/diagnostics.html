@@ -1,0 +1,97 @@
+<!-- TAB: DIAGNOSTICS & SYSTEM HEALTH -->
+<div class="glass-panel p-5 sm:p-6 space-y-6">
+  <!-- Header Bar -->
+  <div class="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-slate-200/80">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
+        <svg class="w-5 h-5"><use href="#icon-cpu"></use></svg>
+      </div>
+      <div>
+        <h2 class="text-base sm:text-lg font-extrabold text-slate-900">Diagnostik Sistem &amp; Latensi Akun</h2>
+        <p class="text-xs text-slate-500">Pemantauan kesehatan real-time, latensi RTT ke Google Cloud Companion, dan status sirkuit proteksi</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="btnRunDiagnostics" class="btn btn-primary text-xs px-3.5 py-2 flex items-center gap-1.5" onclick="fetchDiagnostics(true)">
+        <svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg>
+        <span>Jalankan Probe Ulang</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Gateway Runtime & Circuit Breaker Grid -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <!-- Card 1: Gateway Status -->
+    <div class="rounded-2xl bg-white/95 border border-slate-200/80 p-5 shadow-2xs">
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+        <span>Status Gateway</span>
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+      </div>
+      <div class="text-2xl font-black text-emerald-600 mt-2" id="diagGatewayStatus">Healthy</div>
+      <div class="text-[11px] text-slate-400 mt-1" id="diagCheckedAt">Terakhir dicek: -</div>
+    </div>
+
+    <!-- Card 2: Memory & Runtime -->
+    <div class="rounded-2xl bg-white/95 border border-slate-200/80 p-5 shadow-2xs">
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+        <span>Alokasi Heap Go</span>
+        <svg class="w-3.5 h-3.5 text-blue-500"><use href="#icon-activity"></use></svg>
+      </div>
+      <div class="text-2xl font-black text-slate-900 mt-2" id="diagMemoryAlloc">- MB</div>
+      <div class="text-[11px] text-slate-400 mt-1" id="diagGoroutines">- Goroutines aktif</div>
+    </div>
+
+    <!-- Card 3: Model Circuit Breaker -->
+    <div class="rounded-2xl bg-white/95 border border-slate-200/80 p-5 shadow-2xs sm:col-span-2">
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+        <span>Model Circuit Breaker</span>
+        <span class="badge badge-success text-[10px] font-mono px-2 py-0.5">Semua Normal</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 pt-1 text-xs">
+        <div class="p-2 rounded-lg bg-slate-50 border border-slate-200/60">
+          <div class="text-[10px] text-slate-500 font-mono truncate">Gemini Flash</div>
+          <strong class="text-emerald-700 font-semibold" id="cbGeminiStatus">Closed (Sehat)</strong>
+        </div>
+        <div class="p-2 rounded-lg bg-slate-50 border border-slate-200/60">
+          <div class="text-[10px] text-slate-500 font-mono truncate">Claude Sonnet</div>
+          <strong class="text-emerald-700 font-semibold" id="cbSonnetStatus">Closed (Sehat)</strong>
+        </div>
+        <div class="p-2 rounded-lg bg-slate-50 border border-slate-200/60">
+          <div class="text-[10px] text-slate-500 font-mono truncate">Claude Opus</div>
+          <strong class="text-emerald-700 font-semibold" id="cbOpusStatus">Closed (Sehat)</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Latency Probe & Account Health Table -->
+  <div class="rounded-2xl bg-white/95 border border-slate-200/80 p-5 shadow-2xs">
+    <div class="flex items-center justify-between mb-4">
+      <div class="font-extrabold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+        <span class="p-1.5 rounded-lg bg-indigo-50 text-indigo-600"><svg class="w-4 h-4"><use href="#icon-clock"></use></svg></span>
+        Hasil Pengujian Latensi RTT Akun Google (Round-Trip Time)
+      </div>
+      <span class="text-xs text-slate-400 font-mono">Timeout: 8.0s</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="bg-slate-50/80 border-b border-slate-200 text-left text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+            <th class="p-3">Akun Google</th>
+            <th class="p-3">Project ID</th>
+            <th class="p-3">Tier Akun</th>
+            <th class="p-3">Status</th>
+            <th class="p-3 text-blue-600">Latensi RTT (ms)</th>
+            <th class="p-3 text-indigo-600">Sisa Kuota 5 Jam</th>
+            <th class="p-3 text-emerald-600">Sisa Kuota 7 Hari</th>
+            <th class="p-3 text-slate-400">Pemeriksaan</th>
+          </tr>
+        </thead>
+        <tbody id="diagAccountsTableBody" class="divide-y divide-slate-100">
+          <tr><td colspan="8" class="text-center py-6 text-slate-400">Memuat data diagnostik...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

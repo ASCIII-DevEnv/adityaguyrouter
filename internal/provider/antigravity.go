@@ -232,11 +232,14 @@ func (c *AntigravityClient) LoadCodeAssist(ctx context.Context, accessToken stri
 
 // CallCloudCode makes authenticated requests to Google Cloud Code PA endpoint with failover
 func (c *AntigravityClient) CallCloudCode(ctx context.Context, path string, accessToken, projectID string, body []byte) (*http.Response, error) {
-	// Daily staging has active capacity for Antigravity developer accounts
-	baseURLs := []string{c.cfg.DailyCloudCodeBaseURL, c.cfg.CloudCodeBaseURL}
+	// Production CloudCode is the primary endpoint; daily staging is optional fallback
+	baseURLs := []string{c.cfg.CloudCodeBaseURL, c.cfg.DailyCloudCodeBaseURL}
 
 	var lastErr error
-	for _, base := range baseURLs {
+	for i, base := range baseURLs {
+		if base == "" {
+			continue
+		}
 		targetURL := fmt.Sprintf("%s%s", base, path)
 		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 		if err != nil {
@@ -256,13 +259,17 @@ func (c *AntigravityClient) CallCloudCode(ctx context.Context, path string, acce
 
 		res, err := client.Do(req)
 		if err == nil {
-			// If upstream returns 5xx server error, close body and try secondary host
-			if res.StatusCode < 500 {
+			// If upstream returns 200 OK or 400 Bad Request / 422 (client format error), return immediately
+			if res.StatusCode == http.StatusOK || res.StatusCode == http.StatusBadRequest || res.StatusCode == http.StatusUnprocessableEntity {
 				return res, nil
 			}
-			res.Body.Close()
-			lastErr = fmt.Errorf("upstream server error (%d) from %s", res.StatusCode, base)
-			continue
+			// If this host returns 403 Forbidden, 404 Not Found, 429, or 5xx, and there is another host:
+			if i < len(baseURLs)-1 {
+				res.Body.Close()
+				lastErr = fmt.Errorf("upstream error (%d) from %s, trying failover", res.StatusCode, base)
+				continue
+			}
+			return res, nil
 		}
 		lastErr = err
 	}

@@ -148,3 +148,53 @@ func TestStorageSkillOperations(t *testing.T) {
 		t.Fatalf("expected caveman to be restored and enabled after reset")
 	}
 }
+
+func TestStorageProviderStrategyPersistence(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage_strategy_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		DataDir:        tmpDir,
+		AccountsPath:   filepath.Join(tmpDir, "accounts.json"),
+		ApiKeysPath:    filepath.Join(tmpDir, "api_keys.json"),
+		SkillsPath:     filepath.Join(tmpDir, "skills.json"),
+		TokenUsagePath: filepath.Join(tmpDir, "token_usage.json"),
+		StrategyPath:   filepath.Join(tmpDir, "provider_strategy.json"),
+	}
+
+	st, err := NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to init storage: %v", err)
+	}
+
+	// 1. Default should be smart_quota
+	if strat := st.GetProviderStrategy(); strat != "smart_quota" {
+		t.Fatalf("expected default smart_quota, got %s", strat)
+	}
+
+	// 2. Set to fill_first and verify
+	st.SetProviderStrategy("fill_first")
+	if strat := st.GetProviderStrategy(); strat != "fill_first" {
+		t.Fatalf("expected fill_first, got %s", strat)
+	}
+
+	// 3. Re-initialize storage (simulate server restart)
+	st2, err := NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to re-init storage: %v", err)
+	}
+
+	// Strategy must remain fill_first across restart
+	if strat := st2.GetProviderStrategy(); strat != "fill_first" {
+		t.Fatalf("expected fill_first to persist across restart, got %s", strat)
+	}
+
+	// 4. Invalid strategy falls back to smart_quota
+	st2.SetProviderStrategy("non_existent_method")
+	if strat := st2.GetProviderStrategy(); strat != "smart_quota" {
+		t.Fatalf("expected non_existent_method to fallback to smart_quota, got %s", strat)
+	}
+}

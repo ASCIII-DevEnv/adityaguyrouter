@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -116,5 +117,84 @@ func TestSkillsAPIEndpoints(t *testing.T) {
 	rt.ServeHTTP(recReset, reqReset)
 	if recReset.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for reset, got %d: %s", recReset.Code, recReset.Body.String())
+	}
+}
+
+func TestAccountsSyncEndpoint(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "accounts_sync_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		DataDir:        tmpDir,
+		AccountsPath:   filepath.Join(tmpDir, "accounts.json"),
+		ApiKeysPath:    filepath.Join(tmpDir, "api_keys.json"),
+		SkillsPath:     filepath.Join(tmpDir, "skills.json"),
+		TokenUsagePath: filepath.Join(tmpDir, "token_usage.json"),
+	}
+
+	st, err := storage.NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to init storage: %v", err)
+	}
+
+	client := provider.NewAntigravityClient(cfg)
+	pool := provider.NewAccountPool(cfg, st, client)
+	rt := NewRouter(cfg, st, pool, client)
+
+	// POST /api/accounts/sync
+	req := httptest.NewRequest("POST", "/api/accounts/sync", nil)
+	rec := httptest.NewRecorder()
+	rt.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/accounts/sync, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPlaygroundGuardrailInjection(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "guardrail_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		DataDir:        tmpDir,
+		AccountsPath:   filepath.Join(tmpDir, "accounts.json"),
+		ApiKeysPath:    filepath.Join(tmpDir, "api_keys.json"),
+		SkillsPath:     filepath.Join(tmpDir, "skills.json"),
+		TokenUsagePath: filepath.Join(tmpDir, "token_usage.json"),
+	}
+
+	st, err := storage.NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to init storage: %v", err)
+	}
+
+	client := provider.NewAntigravityClient(cfg)
+	pool := provider.NewAccountPool(cfg, st, client)
+	gh := NewGatewayHandler(cfg, st, pool, client)
+
+	// 1. Without x-playground-request header
+	reqNormal := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	promptNormal := gh.applyPlaygroundGuardrail(reqNormal, "initial prompt")
+	if promptNormal != "initial prompt" {
+		t.Fatalf("expected untouched prompt, got: %s", promptNormal)
+	}
+
+	// 2. With x-playground-request header
+	reqPg := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	reqPg.Header.Set("x-playground-request", "true")
+	promptPg := gh.applyPlaygroundGuardrail(reqPg, "initial prompt")
+	if !strings.Contains(promptPg, "IDENTITAS & CORE PRINCIPLES: GREAT SAGE (CIEL)") {
+		t.Fatalf("expected guardrail injected, got: %s", promptPg)
+	}
+	if !strings.Contains(promptPg, "ZERO EXECUTABLE CODE") {
+		t.Fatalf("expected no-code rule injected")
+	}
+	if !strings.Contains(promptPg, "ELITE PROMPT ENGINEER UNTUK AI AGENT") {
+		t.Fatalf("expected elite prompt engineer capability injected")
 	}
 }

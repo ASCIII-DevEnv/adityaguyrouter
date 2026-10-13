@@ -9,11 +9,13 @@ import (
 type Config struct {
 	Port         int
 	DataDir      string
+	ProjectsDir  string
 	AccountsPath   string
 	ApiKeysPath    string
 	SkillsPath     string
 	TokenUsagePath string
 	FallbacksPath  string
+	StrategyPath   string
 
 	// Google Antigravity OAuth App credentials
 	OAuthClientID     string
@@ -62,14 +64,31 @@ func LoadConfig() *Config {
 	}
 	_ = os.MkdirAll(dataDir, 0755)
 
+	projectsDir := os.Getenv("PROJECTS_DIR")
+	if projectsDir == "" {
+		// Default to parent folder of current working dir if available, or /Projects
+		if cwd, err := os.Getwd(); err == nil {
+			parent := filepath.Dir(cwd)
+			if filepath.Base(cwd) == "antigravity-quota" {
+				projectsDir = parent
+			} else {
+				projectsDir = cwd
+			}
+		} else {
+			projectsDir = ".."
+		}
+	}
+
 	return &Config{
 		Port:         port,
 		DataDir:      dataDir,
+		ProjectsDir:  projectsDir,
 		AccountsPath:   filepath.Join(dataDir, "accounts.json"),
 		ApiKeysPath:    filepath.Join(dataDir, "api_keys.json"),
 		SkillsPath:     filepath.Join(dataDir, "skills.json"),
 		TokenUsagePath: filepath.Join(dataDir, "token_usage.json"),
 		FallbacksPath:  filepath.Join(dataDir, "fallbacks.json"),
+		StrategyPath:   filepath.Join(dataDir, "provider_strategy.json"),
 
 		// Public Antigravity OAuth Client (obfuscated from static push scanner)
 		OAuthClientID:     getEnvOrDefault("GOOGLE_OAUTH_CLIENT_ID", decodeParts("1071006060591", "-tmhssin2h21lcre235vtolojh4g403ep", ".apps.googleusercontent.com")),

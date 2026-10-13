@@ -32,27 +32,81 @@
     </div>
   </div>
 
-  <!-- KPI Cards -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-blue-600 bg-white/95 p-5 shadow-2xs">
-      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Permintaan</div>
-      <div id="statTotalRequests" class="text-2xl sm:text-3xl font-black text-slate-900 mt-1.5">-</div>
-      <div class="text-[11px] text-slate-400 mt-1">Request LLM terproses</div>
+  <!-- Side-by-Side Unified Metrics & Cost Valuation Cards (No Static Capacity, Paired View) -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+    <!-- Card 1: Token Dihemat vs Nilai Dihemat (Side-by-Side) -->
+    <div class="rounded-2xl border border-emerald-200/90 bg-white/95 p-5 shadow-2xs flex flex-col justify-between">
+      <div class="flex items-center justify-between pb-2 border-b border-emerald-100/70">
+        <span class="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Token Dihemat
+        </span>
+        <span id="statSavedEfficiency" class="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60 font-mono">-%</span>
+      </div>
+      <div class="my-3">
+        <div class="text-[11px] text-slate-400 font-medium">Volume Token Dipangkas:</div>
+        <div id="statTotalTokensSaved" class="text-2xl sm:text-3xl font-black text-emerald-600 mt-0.5">-</div>
+      </div>
+      <div class="pt-2.5 border-t border-slate-100 flex items-center justify-between">
+        <span class="text-xs text-slate-500 font-medium">Nilai Uang Dihemat:</span>
+        <strong id="statCostSavedIDR" class="font-mono text-base font-black text-emerald-700">+Rp 0</strong>
+      </div>
     </div>
-    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-emerald-600 bg-white/95 p-5 shadow-2xs">
-      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Token Berhasil Dihemat</div>
-      <div id="statTotalTokensSaved" class="text-2xl sm:text-3xl font-black text-emerald-600 mt-1.5">-</div>
-      <div id="statSavedEfficiency" class="text-[11px] font-bold text-emerald-700 mt-1">Efisiensi: -%</div>
+
+    <!-- Card 2: Output Riil vs Biaya Output (Side-by-Side) -->
+    <div class="rounded-2xl border border-blue-200/90 bg-white/95 p-5 shadow-2xs flex flex-col justify-between">
+      <div class="flex items-center justify-between pb-2 border-b border-blue-100/70">
+        <span class="text-[11px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-blue-500"></span> Output Sebenarnya
+        </span>
+        <span class="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/50">Output Bersih</span>
+      </div>
+      <div class="my-3">
+        <div class="text-[11px] text-slate-400 font-medium">Token Output Riil:</div>
+        <div id="statActualOutputTokens" class="text-2xl sm:text-3xl font-black text-blue-600 mt-0.5">-</div>
+      </div>
+      <div class="pt-2.5 border-t border-slate-100 flex items-center justify-between">
+        <span class="text-xs text-slate-500 font-medium">Biaya Output Saja:</span>
+        <strong id="statCostOutputTokensIDR" class="font-mono text-base font-black text-blue-700">Rp 0</strong>
+      </div>
     </div>
-    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-indigo-600 bg-white/95 p-5 shadow-2xs">
-      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Output Sebenarnya (Riil)</div>
-      <div id="statActualOutputTokens" class="text-2xl sm:text-3xl font-black text-indigo-600 mt-1.5">-</div>
-      <div id="statRawOutputTokens" class="text-[11px] text-slate-400 mt-1">Estimasi tanpa filter: -</div>
+
+    <!-- Card 3: Input & Cache Tokens vs Biaya Prompt (Side-by-Side) -->
+    <div class="rounded-2xl border border-purple-200/90 bg-white/95 p-5 shadow-2xs flex flex-col justify-between">
+      <div class="flex items-center justify-between pb-2 border-b border-purple-100/70">
+        <span class="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-purple-500"></span> Input &amp; Cache
+        </span>
+        <span id="statCachedTokensBadge" class="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60">Cache Diskon</span>
+      </div>
+      <div class="my-3">
+        <div class="text-[11px] text-slate-400 font-medium">Volume Input &amp; Cache:</div>
+        <div id="statTotalInputTokens" class="text-xl sm:text-2xl font-black text-purple-700 mt-0.5 truncate">-</div>
+        <div id="statCachedTokens" class="text-[11.5px] font-semibold text-amber-600 mt-0.5 truncate">Cached: -</div>
+      </div>
+      <div class="pt-2.5 border-t border-slate-100 text-xs flex items-center justify-between">
+        <span class="text-slate-500">Biaya In / Cache:</span>
+        <span class="font-mono text-[11px] font-bold text-slate-700">
+          <span id="statCostInputTokensIDR" class="text-purple-700">Rp 0</span> / <span id="statCostCachedTokensIDR" class="text-amber-600">Rp 0</span>
+        </span>
+      </div>
     </div>
-    <div class="rounded-2xl border border-slate-200/80 border-l-4 border-l-amber-500 bg-white/95 p-5 shadow-2xs">
-      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cached Prompt Tokens</div>
-      <div id="statCachedTokens" class="text-2xl sm:text-3xl font-black text-amber-500 mt-1.5">-</div>
-      <div id="statTotalInputTokens" class="text-[11px] text-slate-400 mt-1">Total input: -</div>
+
+    <!-- Card 4: Total Seluruh Biaya Terpakai (Side-by-Side Kumulatif) -->
+    <div class="rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-slate-50 p-5 shadow-2xs flex flex-col justify-between">
+      <div class="flex items-center justify-between pb-2 border-b border-indigo-100/70">
+        <span class="text-[11px] font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-indigo-600"></span> Total Biaya Terpakai
+        </span>
+        <span class="text-[10px] font-mono text-slate-400">Kurs Rp 18.000</span>
+      </div>
+      <div class="my-3">
+        <div class="text-[11px] text-slate-400 font-medium">Total (Input + Cache + Output):</div>
+        <div id="statCostIncurredIDR" class="text-2xl sm:text-3xl font-black text-indigo-900 mt-0.5">Rp 0</div>
+      </div>
+      <div class="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
+        <span id="statTotalRequests" class="text-slate-500 font-medium">- requests</span>
+        <span id="statCostAvgPerReq" class="font-mono text-[11px] font-bold text-indigo-700">Rp 0 / req</span>
+      </div>
     </div>
   </div>
 
@@ -95,6 +149,8 @@
             <th class="p-3 text-blue-600">Output Riil</th>
             <th class="p-3 text-slate-400">Output Raw</th>
             <th class="p-3 text-emerald-600">Dihemat</th>
+            <th class="p-3 text-indigo-700">Biaya Riil (IDR)</th>
+            <th class="p-3 text-emerald-700">Nilai Dihemat (IDR)</th>
           </tr>
         </thead>
         <tbody id="analyticsModelBreakdownBody" class="divide-y divide-slate-100">
@@ -106,9 +162,11 @@
 
   <!-- Recent Logs Table -->
   <div class="rounded-2xl border border-slate-200/80 bg-white/95 p-5 sm:p-6 mt-6 shadow-2xs">
-    <div class="font-extrabold text-sm sm:text-base text-slate-900 mb-4 flex items-center gap-2">
-      <span class="p-1.5 rounded-lg bg-slate-100 text-slate-700"><svg class="w-4 h-4"><use href="#icon-clock"></use></svg></span>
-      Log Transaksi Terakhir &amp; Audit Token Saver
+    <div class="font-extrabold text-sm sm:text-base text-slate-900 mb-4 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="p-1.5 rounded-lg bg-slate-100 text-slate-700"><svg class="w-4 h-4"><use href="#icon-clock"></use></svg></span>
+        Log Transaksi Terakhir &amp; Audit Token Saver
+      </div>
     </div>
     <div class="overflow-x-auto rounded-xl border border-slate-200/80">
       <table class="w-full border-collapse text-xs">
@@ -122,6 +180,7 @@
             <th class="p-3 text-blue-600">Output Riil</th>
             <th class="p-3 text-slate-400">Output Raw</th>
             <th class="p-3 text-emerald-600">Dihemat</th>
+            <th class="p-3 text-indigo-700">Estimasi Biaya (IDR)</th>
           </tr>
         </thead>
         <tbody id="analyticsRecentLogsBody" class="divide-y divide-slate-100">

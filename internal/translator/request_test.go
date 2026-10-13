@@ -8,7 +8,7 @@ import (
 
 func TestConvertOpenAIToAntigravity(t *testing.T) {
 	req := &model.OpenAIChatRequest{
-		Model: "gemini-2.5-pro",
+		Model: "gemini-3.8-flash-tiered",
 		Messages: []model.OpenAIMessage{
 			{Role: "system", Content: "You are an assistant."},
 			{Role: "user", Content: "Halo world"},
@@ -204,6 +204,12 @@ func TestConvertAnthropicToolCalling(t *testing.T) {
 	if env.Request.Contents[1].Role != "user" || env.Request.Contents[1].Parts[0].FunctionResponse == nil {
 		t.Fatalf("expected functionResponse in user turn")
 	}
+	if env.Request.Contents[1].Parts[0].FunctionResponse.Name != "read_file" {
+		t.Fatalf("expected functionResponse.Name to be read_file, got %s", env.Request.Contents[1].Parts[0].FunctionResponse.Name)
+	}
+	if env.Request.Contents[1].Parts[0].FunctionResponse.ID != "toolu_123" {
+		t.Fatalf("expected functionResponse.ID to be toolu_123, got %s", env.Request.Contents[1].Parts[0].FunctionResponse.ID)
+	}
 }
 
 func TestThinkingBudgetAndGoogleSearchGrounding(t *testing.T) {
@@ -250,3 +256,113 @@ func TestThinkingBudgetAndGoogleSearchGrounding(t *testing.T) {
 		t.Fatalf("expected thinkingConfig in Anthropic generationConfig")
 	}
 }
+
+func TestSanitizeSchemaDraft202012(t *testing.T) {
+	rawSchema := map[string]interface{}{
+		"$schema":              "https://json-schema.org/draft/2020-12/schema",
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]interface{}{
+			"operations": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"anyOf": []interface{}{
+						map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"action": map[string]interface{}{"type": "string"},
+							},
+						},
+					},
+				},
+			},
+			"notify": map[string]interface{}{
+				"description": "Union parameter without type",
+				"anyOf": []interface{}{
+					map[string]interface{}{"type": "boolean"},
+					map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "string",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	sanitized := sanitizeSchema(rawSchema).(map[string]interface{})
+	if _, ok := sanitized["$schema"]; ok {
+		t.Fatalf("expected $schema to be removed")
+	}
+	if _, ok := sanitized["additionalProperties"]; ok {
+		t.Fatalf("expected top-level additionalProperties to be removed")
+	}
+
+	props := sanitized["properties"].(map[string]interface{})
+	ops := props["operations"].(map[string]interface{})
+	items := ops["items"].(map[string]interface{})
+
+	if _, hasType := items["type"]; hasType {
+		t.Fatalf("items should not have type: object forced onto combinators")
+	}
+	if _, hasAnyOf := items["anyOf"]; hasAnyOf {
+		t.Fatalf("items anyOf should be converted to oneOf")
+	}
+	oneOfList, hasOneOf := items["oneOf"].([]interface{})
+	if !hasOneOf || len(oneOfList) != 1 {
+		t.Fatalf("expected items to have oneOf with 1 branch")
+	}
+	branch := oneOfList[0].(map[string]interface{})
+	if _, ok := branch["additionalProperties"]; ok {
+		t.Fatalf("branch additionalProperties should be removed")
+	}
+
+	notify := props["notify"].(map[string]interface{})
+	if _, hasType := notify["type"]; hasType {
+		t.Fatalf("notify with anyOf should not have type: object forced onto it")
+	}
+	if _, hasAnyOf := notify["anyOf"]; hasAnyOf {
+		t.Fatalf("notify anyOf should be converted to oneOf")
+	}
+	if _, hasOneOf := notify["oneOf"]; !hasOneOf {
+		t.Fatalf("notify should have oneOf")
+	}
+}
+
+func TestSanitizeSchema_ArrayTypeUnion(t *testing.T) {
+	rawSchema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        []interface{}{"string", "null"},
+				"description": "Path to target file",
+			},
+			"limit": map[string]interface{}{
+				"type": []string{"integer", "null"},
+			},
+		},
+	}
+
+	sanitized := sanitizeSchema(rawSchema).(map[string]interface{})
+	props := sanitized["properties"].(map[string]interface{})
+
+	pathProp := props["path"].(map[string]interface{})
+	if pathProp["type"] != "string" {
+		t.Fatalf("expected path type to be string scalar, got %v", pathProp["type"])
+	}
+	if pathProp["nullable"] != true {
+		t.Fatalf("expected path nullable to be true, got %v", pathProp["nullable"])
+	}
+
+	limitProp := props["limit"].(map[string]interface{})
+	if limitProp["type"] != "integer" {
+		t.Fatalf("expected limit type to be integer scalar, got %v", limitProp["type"])
+	}
+	if limitProp["nullable"] != true {
+		t.Fatalf("expected limit nullable to be true, got %v", limitProp["nullable"])
+	}
+}
+
+

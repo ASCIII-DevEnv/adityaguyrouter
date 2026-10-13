@@ -33,6 +33,8 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, x-skill, x-session-id, conversation-id")
+	w.Header().Set("Access-Control-Expose-Headers", "x-fallback-model, x-original-model, x-account, x-model")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
@@ -78,8 +80,16 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rt.api.HandleAccounts(w, r)
 		return
 	}
-	if p == "/api/accounts/import-omniroute" {
-		rt.api.HandleImportOmniRoute(w, r)
+	if p == "/api/accounts/sync" {
+		rt.api.HandleAccountsSync(w, r)
+		return
+	}
+	if p == "/api/projects" {
+		rt.api.HandleProjects(w, r)
+		return
+	}
+	if p == "/api/projects/context" {
+		rt.api.HandleProjectContext(w, r)
 		return
 	}
 	if p == "/api/accounts/import-local" {
@@ -112,6 +122,14 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if p == "/api/provider/strategy" {
 		rt.api.HandleProviderStrategy(w, r)
+		return
+	}
+	if p == "/api/tools/execute" {
+		rt.api.HandleToolExecute(w, r)
+		return
+	}
+	if p == "/api/diagnostics" {
+		rt.api.HandleDiagnostics(w, r)
 		return
 	}
 
@@ -167,5 +185,5 @@ func (rt *Router) validateClientAuth(r *http.Request) bool {
 func (rt *Router) writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = w.Write([]byte(`{"error":{"type":"invalid_api_key","message":"Missing or invalid API Key. Include 'Authorization: Bearer <key>' or 'x-api-key: <key>'"}}`))
+	_, _ = w.Write([]byte(`{"error":{"type":"invalid_api_key","message":"Missing or invalid API Key. Include 'Authorization: Bearer <key>' or 'x-api-key: <key>'"}}` + "\n"))
 }

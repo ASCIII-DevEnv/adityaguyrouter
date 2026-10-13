@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
   <title>Aditya GuY Router</title>
   <link rel="icon" type="image/png" href="./assets/logo.png">
   <link rel="shortcut icon" type="image/png" href="./assets/logo.png">
@@ -52,7 +53,6 @@
           <div class="brand-text">
             <div class="flex items-center gap-2">
               <h1>Aditya GuY Router</h1>
-              <span class="badge badge-purple text-[10px] font-mono px-2 py-0.5 rounded-full">v0.1.1</span>
             </div>
           </div>
         </div>
@@ -63,8 +63,7 @@
       </div>
       <div class="nav-tabs" id="mainNavTabs">
         <button class="nav-tab active" onclick="switchTab('dashboard')"><svg class="icon"><use href="#icon-home"></use></svg> Home</button>
-        <button class="nav-tab" onclick="switchTab('analytics')"><svg class="icon"><use href="#icon-trending-up"></use></svg> Token Analytics</button>
-        <button class="nav-tab" onclick="switchTab('usage')"><svg class="icon"><use href="#icon-bar-chart"></use></svg> Usage</button>
+        <button class="nav-tab" onclick="switchTab('analytics')"><svg class="icon"><use href="#icon-trending-up"></use></svg> Analytics</button>
         <button class="nav-tab" onclick="switchTab('provider')"><svg class="icon"><use href="#icon-cloud"></use></svg> Provider</button>
         <button class="nav-tab" onclick="switchTab('fallbacks')"><svg class="icon"><use href="#icon-git-fork"></use></svg> Fallbacks</button>
         <button class="nav-tab" onclick="switchTab('inspector')"><svg class="icon"><use href="#icon-radio"></use></svg> Inspector</button>
@@ -77,7 +76,8 @@
     <div id="tab-dashboard" class="tab-content active space-y-6">
 
       <!-- Bento Metric Cards (4 Cols) -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Bento Metric Cards (5 Cols) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <!-- Card 1 -->
         <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-500 mb-3">
@@ -106,7 +106,21 @@
           </div>
         </div>
 
-        <!-- Card 3 -->
+        <!-- Card 3: Memory / Heap Usage -->
+        <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-500 mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-violet-500"><use href="#icon-cpu"></use></svg> Memori Heap
+            </span>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-mono" id="homeDiagGoroutines">... go</span>
+          </div>
+          <div>
+            <div class="text-2xl font-black font-mono text-slate-900 tracking-tight" id="homeDiagMem">... MB</div>
+            <p class="text-xs text-slate-500 mt-1 truncate" id="homeDiagMemDesc">Alokasi heap runtime Go</p>
+          </div>
+        </div>
+
+        <!-- Card 4 -->
         <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-500 mb-3">
             <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
@@ -120,11 +134,11 @@
           </div>
         </div>
 
-        <!-- Card 4 -->
+        <!-- Card 5 -->
         <div class="rounded-2xl bg-white/90 border border-slate-200/80 p-5 shadow-card hover:shadow-float transition-all duration-200 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-500 mb-3">
             <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <svg class="w-4 h-4 text-purple-500"><use href="#icon-cpu"></use></svg> Model Engine
+              <svg class="w-4 h-4 text-purple-500"><use href="#icon-layers"></use></svg> Model Engine
             </span>
             <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">Tier 1</span>
           </div>
@@ -213,14 +227,6 @@
     </div>
 
 
-    <!-- TAB 2: USAGE & QUOTAS -->
-    <div id="tab-usage" class="tab-content">
-      <div class="glass-panel p-8 text-center text-slate-400">
-        <svg class="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2"><use href="#icon-refresh-cw"></use></svg>
-        <span class="text-xs font-semibold">Memuat Komponen Quota &amp; Usage...</span>
-      </div>
-    </div>
-
     <!-- TAB 4: PROVIDER (ANTIGRAVITY) -->
     <div id="tab-provider" class="tab-content">
       <div class="glass-panel p-8 text-center text-slate-400">
@@ -264,7 +270,7 @@
     </div>
   </div>
 
-<script src="./assets/js/app.js?v=0.1.1"></script>
+<script src="./assets/js/app.js?v=0.1.4"></script>
   <!-- Modal Tambah Skill Baru -->
   <div id="createSkillModal" class="modal-backdrop">
     <div class="modal-dialog flex flex-col gap-4 max-w-lg">

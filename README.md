@@ -11,7 +11,7 @@ AI Gateway lokal, proxy OpenAI/Anthropic kompatibel, dan dashboard manajemen mul
   - `POST /v1/messages` (Anthropic format, tool use)
   - `GET /v1/models` (Daftar model aktif)
 - **Multi-Akun Google Antigravity & Rotasi Cerdas**:
-  - Dukungan multi-akun dengan rotasi kuota tertinggi (*Smart Quota*), round-robin, atau failover akun saat mendekati limit.
+  - Dukungan multi-akun dengan rotasi kuota tertinggi (*Smart Quota*), prioritas urutan akun (*Fill First*), atau failover akun saat mendekati limit.
   - Impor akun otomatis dari data OmniRoute lokal jika tersedia.
 - **Pelacak Kuota Akurat (5-Jam & Mingguan)**:
   - Pemisahan kuota sesi 5-jam (rolling) dan batas mingguan untuk Gemini dan Claude.

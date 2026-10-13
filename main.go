@@ -27,12 +27,18 @@ func main() {
 	client := provider.NewAntigravityClient(cfg)
 	pool := provider.NewAccountPool(cfg, st, client)
 
-	// Background ticker to refresh quotas every 60 seconds
+	// Background ticker to refresh quotas every 60 seconds (plus initial refresh on startup)
 	go func() {
+		// Run initial refresh right after startup
+		time.Sleep(2 * time.Second)
+		initCtx, initCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		pool.RefreshAllQuotas(initCtx)
+		initCancel()
+
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			pool.RefreshAllQuotas(ctx)
 			cancel()
 		}
@@ -43,9 +49,9 @@ func main() {
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      router,
-		ReadTimeout:  120 * time.Second,
-		WriteTimeout: 120 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  300 * time.Second, // Allow large context payloads
+		WriteTimeout: 0,                  // Crucial for long streaming responses (SSE) to prevent drops at 120s
+		IdleTimeout:  300 * time.Second,
 	}
 
 	go func() {

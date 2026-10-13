@@ -1,19 +1,10 @@
-<!-- TAB 4: PROVIDER (ANTIGRAVITY) -->
+<!-- TAB 4: PROVIDER -->
 <div class="glass-panel">
-  <div class="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-    <div>
-      <h2 class="text-lg font-extrabold text-slate-900">Google Antigravity Provider Grouping</h2>
-      <p class="text-xs text-slate-500 mt-0.5">Kelola penyedia AI, pantau detail user, dan status pembaruan refresh token</p>
-    </div>
-    <div class="flex items-center gap-2">
-      <button class="btn btn-sm btn-outline inline-flex items-center gap-1.5 shadow-xs" onclick="refreshAllAccounts(this)">
-        <svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Sync Semua Kuota
-      </button>
-      <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-xs" onclick="loginGoogle()">
-        <svg class="w-3.5 h-3.5"><use href="#icon-plus"></use></svg> Login Akun Google
-      </button>
-    </div>
+  <div class="mb-5">
+    <h2 class="text-lg font-extrabold text-slate-900">Provider &amp; Multi-Akun</h2>
+    <p class="text-xs text-slate-500 mt-0.5">Kelola penyedia AI, pantau detail user, status token, dan sinkronisasi kuota upstream</p>
   </div>
+
   <div id="providerGroupingContainer">
     <!-- Rendered as Accordion Provider Group -->
   </div>

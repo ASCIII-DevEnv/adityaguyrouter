@@ -93,7 +93,7 @@ func (s *SecretShield) Unredact(text string) string {
 // PruneToolOutput truncates oversized historical tool outputs keeping head and tail
 func PruneToolOutput(content string, maxChars int) string {
 	if maxChars <= 0 {
-		maxChars = 2000
+		maxChars = 50000
 	}
 	if len(content) <= maxChars {
 		return content
