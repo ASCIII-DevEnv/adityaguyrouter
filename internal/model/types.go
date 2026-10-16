@@ -24,6 +24,7 @@ type Account struct {
 	ConsecutiveErrors int       `json:"consecutiveErrors,omitempty"`
 	LastUsedAt        time.Time `json:"lastUsedAt,omitempty"`
 	TotalRequests     int64     `json:"totalRequests,omitempty"`
+	TotalTokens       int64     `json:"totalTokens,omitempty"`
 
 	// Cached quotas
 	Quota5hPercent     float64            `json:"quota5hPercent"`

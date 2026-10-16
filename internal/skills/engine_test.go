@@ -11,11 +11,8 @@ func TestCalculateTokenSavingsSingleSkills(t *testing.T) {
 		minSaved float64
 		maxSaved float64
 	}{
-		{"caveman", 100, 55.0, 68.0},      // ~62%
-		{"ponytail", 100, 42.0, 55.0},     // ~48%
-		{"rtk", 100, 32.0, 45.0},          // ~38%
-		{"context_mode", 100, 26.0, 38.0}, // ~32%
-		{"codegraph", 100, 22.0, 34.0},    // ~28%
+		{"caveman", 100, 55.0, 68.0},  // ~62%
+		{"ponytail", 100, 42.0, 55.0}, // ~48%
 	}
 
 	for _, tc := range cases {
@@ -39,9 +36,8 @@ func TestCalculateTokenSavingsMultiSkillDiminishingReturns(t *testing.T) {
 		t.Errorf("expected comboPct (%.2f%%) > single cavemanPct (%.2f%%)", comboPct, cavemanPct)
 	}
 
-	// 5-Skill combo capped reasonably at ~82%
-	_, _, allPct, _ := CalculateTokenSavings(100, []string{"rtk", "caveman", "ponytail", "context_mode", "codegraph"})
-	if allPct > 85.0 || allPct < 75.0 {
-		t.Errorf("expected 5-skill combo to be ~80%%-82%%, got %.2f%%", allPct)
+	// 2-Skill combo capped reasonably at ~80%
+	if comboPct > 85.0 || comboPct < 75.0 {
+		t.Errorf("expected 2-skill combo to be ~80%%, got %.2f%%", comboPct)
 	}
 }

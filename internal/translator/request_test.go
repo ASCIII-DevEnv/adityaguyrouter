@@ -365,4 +365,82 @@ func TestSanitizeSchema_ArrayTypeUnion(t *testing.T) {
 	}
 }
 
+func TestSanitizeSchema_OpenCodeConstraints(t *testing.T) {
+	rawSchema := map[string]interface{}{
+		"$schema":              "https://json-schema.org/draft/2020-12/schema",
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]interface{}{
+			"offset": map[string]interface{}{
+				"type":             "integer",
+				"exclusiveMinimum": 0,
+				"multipleOf":       1,
+			},
+			"limit": map[string]interface{}{
+				"type":             "integer",
+				"exclusiveMaximum": 100,
+			},
+			"format": map[string]interface{}{
+				"type":  "string",
+				"const": "json",
+			},
+			"tags": map[string]interface{}{
+				"type":        "array",
+				"uniqueItems": true,
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+			},
+			"sample": map[string]interface{}{
+				"type":     "string",
+				"examples": []interface{}{"alpha", "beta"},
+			},
+		},
+	}
+
+	sanitized := sanitizeSchema(rawSchema).(map[string]interface{})
+	props := sanitized["properties"].(map[string]interface{})
+
+	offsetProp := props["offset"].(map[string]interface{})
+	if _, ok := offsetProp["exclusiveMinimum"]; ok {
+		t.Fatalf("exclusiveMinimum should be stripped")
+	}
+	if offsetProp["minimum"] != 0 {
+		t.Fatalf("expected minimum to be 0, got %v", offsetProp["minimum"])
+	}
+	if _, ok := offsetProp["multipleOf"]; ok {
+		t.Fatalf("multipleOf should be stripped")
+	}
+
+	limitProp := props["limit"].(map[string]interface{})
+	if _, ok := limitProp["exclusiveMaximum"]; ok {
+		t.Fatalf("exclusiveMaximum should be stripped")
+	}
+	if limitProp["maximum"] != 100 {
+		t.Fatalf("expected maximum to be 100, got %v", limitProp["maximum"])
+	}
+
+	formatProp := props["format"].(map[string]interface{})
+	if _, ok := formatProp["const"]; ok {
+		t.Fatalf("const should be stripped")
+	}
+	enumList, ok := formatProp["enum"].([]interface{})
+	if !ok || len(enumList) != 1 || enumList[0] != "json" {
+		t.Fatalf("expected enum to be ['json'], got %v", formatProp["enum"])
+	}
+
+	tagsProp := props["tags"].(map[string]interface{})
+	if _, ok := tagsProp["uniqueItems"]; ok {
+		t.Fatalf("uniqueItems should be stripped")
+	}
+
+	sampleProp := props["sample"].(map[string]interface{})
+	if _, ok := sampleProp["examples"]; ok {
+		t.Fatalf("examples should be stripped")
+	}
+	if sampleProp["example"] != "alpha" {
+		t.Fatalf("expected example to be alpha, got %v", sampleProp["example"])
+	}
+}
+
 

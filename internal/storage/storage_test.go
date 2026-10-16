@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestStorageRecordTokenUsageAndFlush(t *testing.T) {
@@ -51,6 +52,71 @@ func TestStorageRecordTokenUsageAndFlush(t *testing.T) {
 	// Verify file was written to disk
 	if _, err := os.Stat(cfg.TokenUsagePath); os.IsNotExist(err) {
 		t.Fatalf("expected token_usage.json to exist on disk")
+	}
+}
+
+func TestStorageTokenUsage30DaysRetention(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage_retention_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		DataDir:        tmpDir,
+		AccountsPath:   filepath.Join(tmpDir, "accounts.json"),
+		ApiKeysPath:    filepath.Join(tmpDir, "api_keys.json"),
+		SkillsPath:     filepath.Join(tmpDir, "skills.json"),
+		TokenUsagePath: filepath.Join(tmpDir, "token_usage.json"),
+	}
+
+	st, err := NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to init storage: %v", err)
+	}
+
+	now := time.Now()
+	// Add record from 45 days ago (should be pruned)
+	st.RecordTokenUsage(&model.TokenUsageRecord{
+		ID:        "rec_old",
+		Timestamp: now.AddDate(0, 0, -45),
+	})
+
+	// Add record from 10 days ago (should be kept)
+	st.RecordTokenUsage(&model.TokenUsageRecord{
+		ID:        "rec_recent",
+		Timestamp: now.AddDate(0, 0, -10),
+	})
+
+	// Add record from today (should be kept)
+	st.RecordTokenUsage(&model.TokenUsageRecord{
+		ID:        "rec_today",
+		Timestamp: now,
+	})
+
+	st.mu.RLock()
+	var foundOld, foundRecent, foundToday bool
+	for _, r := range st.tokenUsage {
+		if r.ID == "rec_old" {
+			foundOld = true
+		}
+		if r.ID == "rec_recent" {
+			foundRecent = true
+		}
+		if r.ID == "rec_today" {
+			foundToday = true
+		}
+	}
+	st.mu.RUnlock()
+
+	if foundOld {
+		t.Errorf("expected record older than 30 days (rec_old) to be pruned")
+	}
+	if !foundRecent {
+		t.Errorf("expected record from 10 days ago (rec_recent) to be kept")
+	}
+	if !foundToday {
+		t.Errorf("expected record from today (rec_today) to be kept")
 	}
 }
 

@@ -7,7 +7,14 @@
       </h2>
       <p class="text-xs text-slate-500 mt-1">Konfigurasi otomatis jika model upstream utama mengembalikan error kuota (429 / Quota Exceeded), permintaan otomatis dialihkan ke rantai model cadangan.</p>
     </div>
-    <div class="flex gap-2">
+    <div class="flex items-center gap-2.5 flex-wrap">
+      <div class="flex items-center gap-2 bg-slate-50 border border-slate-200/90 px-3 py-1.5 rounded-xl shadow-2xs">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="fallbackMasterToggle" class="sr-only peer" onchange="toggleFallbackEnabled()">
+          <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+        </label>
+        <span id="fallbackStatusBadge" class="text-xs font-bold text-slate-700">Aktif</span>
+      </div>
       <button class="btn btn-sm btn-primary inline-flex items-center gap-1.5 shadow-sm" onclick="saveAllFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-save"></use></svg> Simpan Semua Pengaturan</button>
       <button class="btn btn-sm inline-flex items-center gap-1.5" onclick="resetDefaultFallbacks()"><svg class="w-3.5 h-3.5"><use href="#icon-refresh-cw"></use></svg> Reset Default</button>
     </div>

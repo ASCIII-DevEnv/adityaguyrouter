@@ -62,7 +62,10 @@
       </div>
       <div class="my-3">
         <div class="text-[11px] text-slate-400 font-medium">Token Output Riil:</div>
-        <div id="statActualOutputTokens" class="text-2xl sm:text-3xl font-black text-blue-600 mt-0.5">-</div>
+        <div class="flex items-baseline gap-2">
+          <div id="statActualOutputTokens" class="text-2xl sm:text-3xl font-black text-blue-600 mt-0.5">-</div>
+          <span class="text-[11px] text-slate-400 font-mono">(raw: <span id="statRawOutputTokens">-</span>)</span>
+        </div>
       </div>
       <div class="pt-2.5 border-t border-slate-100 flex items-center justify-between">
         <span class="text-xs text-slate-500 font-medium">Biaya Output Saja:</span>

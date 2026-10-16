@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -184,17 +183,11 @@ func TestPlaygroundGuardrailInjection(t *testing.T) {
 		t.Fatalf("expected untouched prompt, got: %s", promptNormal)
 	}
 
-	// 2. With x-playground-request header
+	// 2. With x-playground-request header (default model mode: no forced restrictions or personas)
 	reqPg := httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	reqPg.Header.Set("x-playground-request", "true")
 	promptPg := gh.applyPlaygroundGuardrail(reqPg, "initial prompt")
-	if !strings.Contains(promptPg, "IDENTITAS & CORE PRINCIPLES: GREAT SAGE (CIEL)") {
-		t.Fatalf("expected guardrail injected, got: %s", promptPg)
-	}
-	if !strings.Contains(promptPg, "ZERO EXECUTABLE CODE") {
-		t.Fatalf("expected no-code rule injected")
-	}
-	if !strings.Contains(promptPg, "ELITE PROMPT ENGINEER UNTUK AI AGENT") {
-		t.Fatalf("expected elite prompt engineer capability injected")
+	if promptPg != "initial prompt" {
+		t.Fatalf("expected untouched default prompt, got: %s", promptPg)
 	}
 }

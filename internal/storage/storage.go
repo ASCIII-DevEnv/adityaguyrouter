@@ -152,18 +152,18 @@ func (s *Storage) loadAll() error {
 		}
 	}
 	// Create default API key if empty or ensure combo skill is set
-	const allComboSkills = "rtk,caveman,ponytail,context_mode,codegraph"
+	const allComboSkills = "caveman,ponytail,token-efficiency"
 	if len(s.apiKeys) == 0 {
 		defKey := &model.ApiKey{
 			ID:           "default-key",
-			Key:          "sk-antigravity-local",
+			Key:          "«redacted:sk-…»",
 			Name:         "Default Local Key",
 			DefaultSkill: allComboSkills,
 			CreatedAt:    time.Now(),
 		}
 		s.apiKeys[defKey.Key] = defKey
 		_ = s.saveApiKeysLocked()
-	} else if defKey, exists := s.apiKeys["sk-antigravity-local"]; exists {
+	} else if defKey, exists := s.apiKeys["«redacted:sk-…»"]; exists {
 		defKey.DefaultSkill = allComboSkills
 		_ = s.saveApiKeysLocked()
 	}
@@ -176,7 +176,9 @@ func (s *Storage) loadAll() error {
 		}
 	}
 	// Seed or update built-in skills (preserve user's Enabled flag, and do NOT resurrect if user explicitly deleted)
+	builtinMap := make(map[string]bool)
 	for _, b := range skills.GetBuiltinSkills() {
+		builtinMap[b.ID] = true
 		existing, exists := s.skills[b.ID]
 		if !exists {
 			if len(s.skills) == 0 {
@@ -190,10 +192,33 @@ func (s *Storage) loadAll() error {
 			existing.Name = b.Name
 		}
 	}
+	// Purge obsolete built-in skills that no longer exist in GetBuiltinSkills()
+	for id, sk := range s.skills {
+		if sk.IsBuiltin && !builtinMap[id] {
+			delete(s.skills, id)
+		}
+	}
 	_ = s.saveSkillsLocked()
 
 	// 4. Load Token Usage
 	s.loadTokenUsageLocked()
+
+	// Aggregate historical tokens for accounts that don't have TotalTokens recorded yet
+	accountsNeedingTokens := make(map[string]bool)
+	for _, acc := range s.accounts {
+		if acc.TotalTokens == 0 {
+			accountsNeedingTokens[acc.Email] = true
+		}
+	}
+	if len(accountsNeedingTokens) > 0 {
+		for _, rec := range s.tokenUsage {
+			if accountsNeedingTokens[rec.Account] {
+				if acc, ok := s.accounts[rec.Account]; ok {
+					acc.TotalTokens += int64(rec.PromptTokens + rec.ActualOutputTokens)
+				}
+			}
+		}
+	}
 
 	// 5. Load Fallback Rules
 	if raw, err := os.ReadFile(s.fallbacksPath); err == nil {
@@ -295,6 +320,19 @@ func (s *Storage) UpsertAccount(acc *model.Account) error {
 	return s.saveAccountsLocked()
 }
 
+func (s *Storage) RecordAccountUsage(email string, tokens int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if acc, ok := s.accounts[email]; ok {
+		acc.ConsecutiveErrors = 0
+		acc.TotalRequests++
+		acc.TotalTokens += tokens
+		acc.LastUsedAt = time.Now()
+		acc.UpdatedAt = time.Now()
+		_ = s.saveAccountsLocked()
+	}
+}
+
 func (s *Storage) DeleteAccount(email string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -354,7 +392,7 @@ func (s *Storage) CreateApiKey(name, defaultSkill string) (*model.ApiKey, error)
 	key := fmt.Sprintf("sk-ag-%s", hex.EncodeToString(b))
 
 	if defaultSkill == "" {
-		defaultSkill = "rtk,caveman,ponytail,context_mode,codegraph"
+		defaultSkill = "caveman,ponytail,token-efficiency"
 	}
 
 	apiKey := &model.ApiKey{
@@ -461,10 +499,17 @@ func (s *Storage) DeleteSkill(id string) error {
 func (s *Storage) ResetBuiltinSkills() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	builtinMap := make(map[string]bool)
 	for _, b := range skills.GetBuiltinSkills() {
+		builtinMap[b.ID] = true
 		item := b
 		item.Enabled = true
 		s.skills[b.ID] = &item
+	}
+	for id, sk := range s.skills {
+		if sk.IsBuiltin && !builtinMap[id] {
+			delete(s.skills, id)
+		}
 	}
 	return s.saveSkillsLocked()
 }
@@ -486,6 +531,7 @@ func (s *Storage) loadTokenUsageLocked() {
 			}
 		}
 			s.tokenUsage = records
+			s.pruneOldTokenUsageLocked(time.Now())
 			_ = s.saveTokenUsageLocked()
 			return
 		}
@@ -494,12 +540,25 @@ func (s *Storage) loadTokenUsageLocked() {
 	s.seedSampleTokenUsageLocked()
 }
 
-func (s *Storage) saveTokenUsageLocked() error {
-	// Retain up to 20,000 recent records to prevent infinite growth
-	const maxRecords = 5000
-	if len(s.tokenUsage) > maxRecords {
-		s.tokenUsage = s.tokenUsage[len(s.tokenUsage)-maxRecords:]
+// pruneOldTokenUsageLocked retains records from the past 1 month (30 days) and deletes older ones
+func (s *Storage) pruneOldTokenUsageLocked(now time.Time) {
+	cutoff := now.AddDate(0, 0, -30)
+	var kept []model.TokenUsageRecord
+	for _, rec := range s.tokenUsage {
+		if !rec.Timestamp.Before(cutoff) {
+			kept = append(kept, rec)
+		}
 	}
+	// Secondary safety ceiling (100,000 records) to protect 256MB container memory
+	const maxRetentionCap = 100000
+	if len(kept) > maxRetentionCap {
+		kept = kept[len(kept)-maxRetentionCap:]
+	}
+	s.tokenUsage = kept
+}
+
+func (s *Storage) saveTokenUsageLocked() error {
+	s.pruneOldTokenUsageLocked(time.Now())
 	bytes, err := json.MarshalIndent(s.tokenUsage, "", "  ")
 	if err != nil {
 		return err
@@ -523,16 +582,9 @@ func (s *Storage) seedSampleTokenUsageLocked() {
 
 	// Skill variations to produce realistic variety across seed records
 	skillCombos := [][]string{
-		{"caveman"},                                     // ~62%
-		{"rtk"},                                         // ~38%
-		{"ponytail"},                                    // ~48%
-		{"context_mode"},                                // ~32%
-		{"codegraph"},                                   // ~28%
-		{"caveman", "ponytail"},                         // ~80%
-		{"rtk", "context_mode"},                         // ~58%
-		{"rtk", "caveman", "ponytail"},                  // ~82%
-		{"context_mode", "codegraph"},                   // ~51%
-		{"rtk", "caveman", "ponytail", "context_mode"},  // ~82%
+		{"caveman"},             // ~62%
+		{"ponytail"},            // ~48%
+		{"caveman", "ponytail"}, // ~80%
 	}
 
 	// Seed for past 30 days
@@ -587,22 +639,21 @@ func (s *Storage) RecordTokenUsage(rec *model.TokenUsageRecord) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := time.Now()
 	if rec.ID == "" {
-		rec.ID = fmt.Sprintf("req_%d", time.Now().UnixNano())
+		rec.ID = fmt.Sprintf("req_%d", now.UnixNano())
 	}
 	if rec.Timestamp.IsZero() {
-		rec.Timestamp = time.Now()
+		rec.Timestamp = now
 	}
 	if rec.Date == "" {
 		rec.Date = rec.Timestamp.Format("2006-01-02")
 	}
 	rec.Hour = rec.Timestamp.Hour()
 
-	const maxRecords = 5000
 	s.tokenUsage = append(s.tokenUsage, *rec)
-	if len(s.tokenUsage) > maxRecords {
-		s.tokenUsage = s.tokenUsage[len(s.tokenUsage)-maxRecords:]
-	}
+	// Prune records older than 1 month (30 days)
+	s.pruneOldTokenUsageLocked(now)
 	s.tokenUsageDirty = true
 }
 
@@ -861,7 +912,7 @@ func (s *Storage) GetProviderStrategy() string {
 func (s *Storage) SetProviderStrategy(strat string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if strat != "fill_first" {
+	if strat != "fill_first" && strat != "least_used" && strat != "round_robin" {
 		strat = "smart_quota"
 	}
 	s.providerStrategy = strat

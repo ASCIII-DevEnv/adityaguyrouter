@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"antigravity-gateway/internal/config"
 	"antigravity-gateway/internal/model"
 	"antigravity-gateway/internal/storage"
@@ -324,6 +325,89 @@ func TestFillFirstWeeklyExhaustionAccountTransition(t *testing.T) {
 	}
 	if selClaude.Email != "acc1_priority@gmail.com" {
 		t.Fatalf("expected acc1 for claude because acc1 has priority Order 0, got: %s", selClaude.Email)
+	}
+}
+
+func TestLeastUsedRoutingStrategy(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pool_test_least_used_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		DataDir:        tmpDir,
+		AccountsPath:   filepath.Join(tmpDir, "accounts.json"),
+		StrategyPath:   filepath.Join(tmpDir, "provider_strategy.json"),
+		TokenUsagePath: filepath.Join(tmpDir, "token_usage.json"),
+	}
+
+	st, err := storage.NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to init storage: %v", err)
+	}
+	st.SetProviderStrategy("least_used")
+
+	acc1 := &model.Account{
+		Email:              "heavy@gmail.com",
+		IsActive:           true,
+		Quota5hPercent:     100,
+		QuotaWeeklyPercent: 100,
+		TotalRequests:      100,
+		TokenExpiresAt:     time.Now().Add(1 * time.Hour),
+	}
+	acc2 := &model.Account{
+		Email:              "idle@gmail.com",
+		IsActive:           true,
+		Quota5hPercent:     100,
+		QuotaWeeklyPercent: 100,
+		TotalRequests:      5,
+		TokenExpiresAt:     time.Now().Add(1 * time.Hour),
+	}
+	_ = st.UpsertAccount(acc1)
+	_ = st.UpsertAccount(acc2)
+
+	client := NewAntigravityClient(cfg)
+	pool := NewAccountPool(cfg, st, client)
+
+	selected, err := pool.SelectAccount("", "dummy-sess", nil)
+	if err != nil {
+		t.Fatalf("expected selection to succeed, got: %v", err)
+	}
+	if selected.Email != "idle@gmail.com" {
+		t.Fatalf("expected idle account to be selected under least_used, got: %s", selected.Email)
+	}
+}
+
+func TestForceRefreshTokenWithoutRefreshToken(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pool_test_refresh_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		DataDir:        tmpDir,
+		AccountsPath:   filepath.Join(tmpDir, "accounts.json"),
+		StrategyPath:   filepath.Join(tmpDir, "provider_strategy.json"),
+		TokenUsagePath: filepath.Join(tmpDir, "token_usage.json"),
+	}
+
+	st, err := storage.NewStorage(cfg)
+	if err != nil {
+		t.Fatalf("failed to init storage: %v", err)
+	}
+
+	acc := &model.Account{
+		Email: "no_refresh@gmail.com",
+	}
+
+	client := NewAntigravityClient(cfg)
+	pool := NewAccountPool(cfg, st, client)
+
+	_, err = pool.ForceRefreshToken(context.Background(), acc)
+	if err == nil {
+		t.Fatalf("expected error when refreshing account without refresh token")
 	}
 }
 

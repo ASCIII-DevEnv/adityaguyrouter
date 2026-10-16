@@ -23,16 +23,19 @@ type AccountPool struct {
 	storage      *storage.Storage
 	client       *AntigravityClient
 	sessions     map[string]string // sessionID -> email (Session affinity)
-	sessionsMu   sync.RWMutex
-	refreshLocks sync.Map // email -> *sync.Mutex (Double-checked locking for token refresh)
+	sessionTimes map[string]time.Time
+	sessionsMu    sync.RWMutex
+	refreshLocks  sync.Map // email -> *sync.Mutex (Double-checked locking for token refresh)
+	lastQuotaSync sync.Map // email -> time.Time (Debounced post-request quota refresh)
 }
 
 func NewAccountPool(cfg *config.Config, st *storage.Storage, client *AntigravityClient) *AccountPool {
 	return &AccountPool{
-		cfg:      cfg,
-		storage:  st,
-		client:   client,
-		sessions: make(map[string]string),
+		cfg:          cfg,
+		storage:      st,
+		client:       client,
+		sessions:     make(map[string]string),
+		sessionTimes: make(map[string]time.Time),
 	}
 }
 
@@ -43,6 +46,7 @@ func (p *AccountPool) RemoveAccountSessions(email string) {
 	for sessID, targetEmail := range p.sessions {
 		if targetEmail == email {
 			delete(p.sessions, sessID)
+			delete(p.sessionTimes, sessID)
 		}
 	}
 }
@@ -84,19 +88,26 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 		}
 		if strings.HasPrefix(reqModel, "gemini-") {
 			if gemFam, ok := acc.Families["gemini"]; ok {
-				if (gemFam.LimitWeekly.DisplayName != "" || gemFam.LimitWeekly.ResetAt != "") && gemFam.LimitWeekly.RemainingPercent == 0.0 {
+				if (gemFam.LimitWeekly.DisplayName != "" || gemFam.LimitWeekly.ResetAt != "") && gemFam.LimitWeekly.RemainingPercent <= 0.5 {
 					return true
 				}
-				if (gemFam.Limit5h.DisplayName != "" || gemFam.Limit5h.ResetAt != "") && gemFam.Limit5h.RemainingPercent == 0.0 {
+				if (gemFam.Limit5h.DisplayName != "" || gemFam.Limit5h.ResetAt != "") && gemFam.Limit5h.RemainingPercent <= 0.5 {
 					return true
 				}
 			}
 		} else if strings.HasPrefix(reqModel, "claude-") || strings.HasPrefix(reqModel, "gpt-") {
 			if claudeFam, ok := acc.Families["claude"]; ok {
-				if (claudeFam.LimitWeekly.DisplayName != "" || claudeFam.LimitWeekly.ResetAt != "") && claudeFam.LimitWeekly.RemainingPercent == 0.0 {
+				if (claudeFam.LimitWeekly.DisplayName != "" || claudeFam.LimitWeekly.ResetAt != "") && claudeFam.LimitWeekly.RemainingPercent <= 0.5 {
 					return true
 				}
-				if (claudeFam.Limit5h.DisplayName != "" || claudeFam.Limit5h.ResetAt != "") && claudeFam.Limit5h.RemainingPercent == 0.0 {
+				if (claudeFam.Limit5h.DisplayName != "" || claudeFam.Limit5h.ResetAt != "") && claudeFam.Limit5h.RemainingPercent <= 0.5 {
+					return true
+				}
+			}
+		}
+		if len(acc.ModelsList) > 0 {
+			for _, m := range acc.ModelsList {
+				if strings.EqualFold(m.ID, reqModel) && m.RemainingPercent <= 0.5 && m.ResetAt != "" {
 					return true
 				}
 			}
@@ -148,16 +159,37 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 
 	// 1. Check Session Affinity (if conversation session key matches and account is healthy)
 	strategy := p.storage.GetProviderStrategy()
-	if sessionID != "" {
-		p.sessionsMu.RLock()
+	if sessionID != "" && strategy != "round_robin" && strategy != "least_used" {
+		p.sessionsMu.Lock()
 		targetEmail, hasAffinity := p.sessions[sessionID]
-		p.sessionsMu.RUnlock()
+		if hasAffinity {
+			if t, ok := p.sessionTimes[sessionID]; ok && time.Since(t) > 15*time.Minute {
+				delete(p.sessions, sessionID)
+				delete(p.sessionTimes, sessionID)
+				hasAffinity = false
+			}
+		}
+		p.sessionsMu.Unlock()
 
 		if hasAffinity && !excluded[targetEmail] {
 			for _, acc := range accounts {
 				if acc.Email == targetEmail && acc.IsActive && now.After(acc.CooldownUntil) && !isModelExhausted(acc) {
+					p.sessionsMu.Lock()
+					p.sessionTimes[sessionID] = time.Now()
+					p.sessionsMu.Unlock()
+
 					if strategy == "fill_first" {
-						// In fill_first, keep session affinity as long as account has not hit 0%
+						// In fill_first, check if a higher-priority account (lower Order) has finished cooldown
+						for _, cand := range accounts {
+							if cand.IsActive && !excluded[cand.Email] && now.After(cand.CooldownUntil) && !isModelExhausted(cand) {
+								if cand.Order < acc.Order {
+									// Higher priority account is healthy again! Release session affinity and switch back
+									goto SkipAffinityToHighestPriority
+								}
+							}
+						}
+
+						// Otherwise, keep session affinity as long as account has not hit 0%
 						return acc, nil
 					}
 					// Check if account has safe remaining quota (> 15%) to maintain prompt cache affinity
@@ -172,6 +204,7 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 		}
 	}
 
+SkipAffinityToHighestPriority:
 	// 2. Filter available healthy accounts with Pre-emptive Parking (> 15% safe margin)
 	var candidates []*model.Account
 	for _, acc := range accounts {
@@ -241,6 +274,14 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 			}
 			return candidates[i].Email < candidates[j].Email
 		})
+	case "round_robin", "least_used":
+		// Distribute load evenly: sort by TotalRequests ascending, then LastUsedAt oldest first
+		sort.Slice(candidates, func(i, j int) bool {
+			if candidates[i].TotalRequests != candidates[j].TotalRequests {
+				return candidates[i].TotalRequests < candidates[j].TotalRequests
+			}
+			return candidates[i].LastUsedAt.Before(candidates[j].LastUsedAt)
+		})
 	default: // "smart_quota"
 		// Prioritize highest remaining quota bottleneck, penalize errors, tie-breaker idle longest
 		sort.Slice(candidates, func(i, j int) bool {
@@ -271,6 +312,10 @@ func (p *AccountPool) selectAccountLocked(targetAccount string, sessionID string
 	if sessionID != "" {
 		p.sessionsMu.Lock()
 		p.sessions[sessionID] = chosen.Email
+		if p.sessionTimes == nil {
+			p.sessionTimes = make(map[string]time.Time)
+		}
+		p.sessionTimes[sessionID] = time.Now()
 		p.sessionsMu.Unlock()
 	}
 
@@ -287,8 +332,17 @@ func (p *AccountPool) applyHumanJitter() {
 
 // EnsureValidToken refreshes access token if expired with double-checked locking
 func (p *AccountPool) EnsureValidToken(ctx context.Context, acc *model.Account) (*model.Account, error) {
-	if time.Now().Before(acc.TokenExpiresAt.Add(-2 * time.Minute)) {
+	if acc.AccessToken != "" && !acc.TokenExpiresAt.IsZero() && time.Now().Before(acc.TokenExpiresAt.Add(-2*time.Minute)) {
 		return acc, nil
+	}
+
+	return p.ForceRefreshToken(ctx, acc)
+}
+
+// ForceRefreshToken unconditionally refreshes the access token using refreshToken
+func (p *AccountPool) ForceRefreshToken(ctx context.Context, acc *model.Account) (*model.Account, error) {
+	if acc.RefreshToken == "" {
+		return nil, fmt.Errorf("account %s has no refresh token", acc.Email)
 	}
 
 	// Serialize token refresh per account to prevent duplicate refresh calls
@@ -299,41 +353,70 @@ func (p *AccountPool) EnsureValidToken(ctx context.Context, acc *model.Account) 
 
 	// Double check latest account status from storage after acquiring lock
 	if latest, ok := p.storage.GetAccount(acc.Email); ok {
-		if time.Now().Before(latest.TokenExpiresAt.Add(-2 * time.Minute)) {
+		// If another goroutine already refreshed it within the last 15 seconds, reuse it
+		if latest.AccessToken != "" && !latest.TokenExpiresAt.IsZero() && time.Now().Before(latest.TokenExpiresAt.Add(-2*time.Minute)) && time.Since(latest.UpdatedAt) < 15*time.Second {
 			return latest, nil
 		}
 		acc = latest
 	}
 
-	// Refresh token
+	// Refresh token via Google OAuth endpoint
 	newToken, expiresAt, err := p.client.RefreshToken(ctx, acc.RefreshToken)
 	if err != nil {
 		// Circuit breaker for failed auth
 		acc.ConsecutiveErrors++
+		acc.TokenExpiresAt = time.Time{}
 		acc.CooldownUntil = time.Now().Add(10 * time.Minute)
 		acc.CooldownReason = fmt.Sprintf("Token refresh failed: %v", err)
 		_ = p.storage.UpsertAccount(acc)
-		return nil, fmt.Errorf("token refresh failed: %w", err)
+		return nil, fmt.Errorf("token refresh failed for %s: %w", acc.Email, err)
 	}
 
 	acc.AccessToken = newToken
 	acc.TokenExpiresAt = expiresAt
 	acc.ConsecutiveErrors = 0
+	acc.CooldownUntil = time.Time{}
+	acc.CooldownReason = ""
 	_ = p.storage.UpsertAccount(acc)
 	return acc, nil
 }
 
-// MarkAccountSuccess updates usage metrics
-func (p *AccountPool) MarkAccountSuccess(email string) {
-	if acc, ok := p.storage.GetAccount(email); ok {
-		acc.ConsecutiveErrors = 0
-		acc.TotalRequests++
-		acc.LastUsedAt = time.Now()
-		_ = p.storage.UpsertAccount(acc)
-	}
+// RecordAccountUsage updates request count, token count, and timestamps
+func (p *AccountPool) RecordAccountUsage(email string, tokens int64) {
+	p.storage.RecordAccountUsage(email, tokens)
 }
 
-// MarkAccountRateLimited applies cooldown for 429 errors
+// MarkAccountSuccess updates usage metrics (delegating to RecordAccountUsage)
+func (p *AccountPool) MarkAccountSuccess(email string) {
+	p.RecordAccountUsage(email, 0)
+}
+
+// TriggerAsyncQuotaSync schedules an asynchronous quota refresh with a 15-second debounce window
+func (p *AccountPool) TriggerAsyncQuotaSync(email string) {
+	now := time.Now()
+	if val, ok := p.lastQuotaSync.Load(email); ok {
+		if last, isTime := val.(time.Time); isTime && now.Sub(last) < 15*time.Second {
+			return
+		}
+	}
+	p.lastQuotaSync.Store(email, now)
+
+	go func() {
+		acc, ok := p.storage.GetAccount(email)
+		if !ok || !acc.IsActive {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		validAcc, err := p.EnsureValidToken(ctx, acc)
+		if err != nil {
+			return
+		}
+		p.FetchAccountQuota(ctx, validAcc)
+	}()
+}
+
+// MarkAccountRateLimited applies cooldown for 429 errors and parses reset metadata
 func (p *AccountPool) MarkAccountRateLimited(email string, reason string) {
 	if acc, ok := p.storage.GetAccount(email); ok {
 		acc.ConsecutiveErrors++
@@ -341,15 +424,58 @@ func (p *AccountPool) MarkAccountRateLimited(email string, reason string) {
 		duration := 30 * time.Duration(1<<uint(min(acc.ConsecutiveErrors-1, 4))) * time.Second
 		acc.CooldownUntil = time.Now().Add(duration)
 		acc.CooldownReason = reason
+
+		// Parse Google 429 ErrorInfo metadata if available
+		var errResp struct {
+			Error struct {
+				Details []struct {
+					Metadata struct {
+						Model               string `json:"model"`
+						QuotaResetTimeStamp string `json:"quotaResetTimeStamp"`
+					} `json:"metadata"`
+				} `json:"details"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(reason), &errResp); err == nil {
+			for _, d := range errResp.Error.Details {
+				if d.Metadata.QuotaResetTimeStamp != "" {
+					modelName := strings.ToLower(d.Metadata.Model)
+					if strings.HasPrefix(modelName, "gemini-") {
+						if gemFam, ok := acc.Families["gemini"]; ok {
+							gemFam.Limit5h.RemainingPercent = 0.0
+							gemFam.Limit5h.ResetAt = d.Metadata.QuotaResetTimeStamp
+							acc.Families["gemini"] = gemFam
+							acc.Quota5hPercent = 0.0
+							acc.Quota5hResetAt = d.Metadata.QuotaResetTimeStamp
+						}
+					} else if strings.HasPrefix(modelName, "claude-") || strings.HasPrefix(modelName, "gpt-") {
+						if clFam, ok := acc.Families["claude"]; ok {
+							clFam.Limit5h.RemainingPercent = 0.0
+							clFam.Limit5h.ResetAt = d.Metadata.QuotaResetTimeStamp
+							acc.Families["claude"] = clFam
+						}
+					}
+					for idx, m := range acc.ModelsList {
+						if strings.EqualFold(m.ID, d.Metadata.Model) {
+							acc.ModelsList[idx].RemainingPercent = 0.0
+							acc.ModelsList[idx].ResetAt = d.Metadata.QuotaResetTimeStamp
+						}
+					}
+				}
+			}
+		}
+
 		_ = p.storage.UpsertAccount(acc)
+		p.TriggerAsyncQuotaSync(email)
 	}
 }
 
-// MarkAccountAuthError triggers immediate quarantine until re-auth
+// MarkAccountAuthError triggers immediate quarantine until re-auth or refresh
 func (p *AccountPool) MarkAccountAuthError(email string, reason string) {
 	if acc, ok := p.storage.GetAccount(email); ok {
 		acc.ConsecutiveErrors++
-		acc.CooldownUntil = time.Now().Add(30 * time.Minute)
+		acc.TokenExpiresAt = time.Time{} // Invalidate so next EnsureValidToken / ForceRefreshToken won't skip
+		acc.CooldownUntil = time.Now().Add(10 * time.Minute)
 		acc.CooldownReason = reason
 		_ = p.storage.UpsertAccount(acc)
 	}
@@ -388,6 +514,14 @@ func (p *AccountPool) FetchAccountQuota(ctx context.Context, acc *model.Account)
 
 	// 1. Quota Summary
 	res, err := p.client.CallCloudCode(ctx, p.cfg.QuotaSummaryPath, acc.AccessToken, acc.ProjectId, body)
+	if res != nil && res.StatusCode == http.StatusUnauthorized && acc.RefreshToken != "" {
+		res.Body.Close()
+		log.Printf("[Quota] Access token for %s returned HTTP 401. Auto-refreshing via OAuth...", acc.Email)
+		if refAcc, refErr := p.ForceRefreshToken(ctx, acc); refErr == nil {
+			acc = refAcc
+			res, err = p.client.CallCloudCode(ctx, p.cfg.QuotaSummaryPath, acc.AccessToken, acc.ProjectId, body)
+		}
+	}
 	var summaryGroups []struct {
 		DisplayName string `json:"displayName"`
 		Buckets     []struct {
@@ -491,6 +625,14 @@ func (p *AccountPool) FetchAccountQuota(ctx context.Context, acc *model.Account)
 	var modelsList []model.ModelQuotaDetail
 	modelsSucceeded := false
 	mRes, mErr := p.client.CallCloudCode(ctx, p.cfg.ModelsPath, acc.AccessToken, acc.ProjectId, body)
+	if mRes != nil && mRes.StatusCode == http.StatusUnauthorized && acc.RefreshToken != "" {
+		mRes.Body.Close()
+		log.Printf("[Quota Models] Access token for %s returned HTTP 401. Auto-refreshing via OAuth...", acc.Email)
+		if refAcc, refErr := p.ForceRefreshToken(ctx, acc); refErr == nil {
+			acc = refAcc
+			mRes, mErr = p.client.CallCloudCode(ctx, p.cfg.ModelsPath, acc.AccessToken, acc.ProjectId, body)
+		}
+	}
 	if mErr == nil && mRes.StatusCode == http.StatusOK {
 		raw, mReadErr := io.ReadAll(mRes.Body)
 		mRes.Body.Close()
@@ -617,6 +759,17 @@ func (p *AccountPool) FetchAccountQuota(ctx context.Context, acc *model.Account)
 			},
 		}
 	}
+
+	// In Antigravity, account-level primary quota represents Gemini (the default model family in Antigravity)
+	if gem5h.DisplayName != "" {
+		acc.Quota5hPercent = gem5h.RemainingPercent
+		acc.Quota5hResetAt = gem5h.ResetAt
+	}
+	if gemWk.DisplayName != "" {
+		acc.QuotaWeeklyPercent = gemWk.RemainingPercent
+		acc.QuotaWeeklyResetAt = gemWk.ResetAt
+	}
+
 	if modelsSucceeded {
 		acc.ModelsList = modelsList
 	}

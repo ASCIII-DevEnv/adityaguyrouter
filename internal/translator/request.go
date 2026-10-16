@@ -646,8 +646,27 @@ func appendOrMergeContent(contents []GeminiContent, role string, parts []GeminiP
 		return contents
 	}
 	if len(contents) > 0 && contents[len(contents)-1].Role == role {
-		contents[len(contents)-1].Parts = append(contents[len(contents)-1].Parts, parts...)
-		return contents
+		lastTurn := contents[len(contents)-1]
+		hasFnResp := false
+		for _, p := range parts {
+			if p.FunctionResponse != nil {
+				hasFnResp = true
+				break
+			}
+		}
+		lastHasFnResp := false
+		for _, p := range lastTurn.Parts {
+			if p.FunctionResponse != nil {
+				lastHasFnResp = true
+				break
+			}
+		}
+
+		// Only merge if both are function responses OR neither is function response (Gemini API invariant)
+		if (!hasFnResp && !lastHasFnResp) || (hasFnResp && lastHasFnResp) {
+			contents[len(contents)-1].Parts = append(contents[len(contents)-1].Parts, parts...)
+			return contents
+		}
 	}
 	return append(contents, GeminiContent{
 		Role:  role,
@@ -712,6 +731,41 @@ func convertToolChoice(tc interface{}) *GeminiToolConfig {
 	return nil
 }
 
+var allowedGeminiSchemaFields = map[string]bool{
+	"type":              true,
+	"format":            true,
+	"title":             true,
+	"description":       true,
+	"nullable":          true,
+	"enum":              true,
+	"items":             true,
+	"maxItems":          true,
+	"max_items":         true,
+	"minItems":          true,
+	"min_items":         true,
+	"properties":        true,
+	"required":          true,
+	"minProperties":     true,
+	"min_properties":    true,
+	"maxProperties":     true,
+	"max_properties":    true,
+	"minimum":           true,
+	"maximum":           true,
+	"minLength":         true,
+	"min_length":        true,
+	"maxLength":         true,
+	"max_length":        true,
+	"pattern":           true,
+	"example":           true,
+	"anyOf":             true,
+	"any_of":            true,
+	"oneOf":             true,
+	"allOf":             true,
+	"propertyOrdering":  true,
+	"property_ordering": true,
+	"default":           true,
+}
+
 func sanitizeSchema(schema interface{}) interface{} {
 	return sanitizeSchemaInternal(schema, true)
 }
@@ -725,8 +779,38 @@ func sanitizeSchemaInternal(schema interface{}, isRoot bool) interface{} {
 		return schema
 	}
 	clean := make(map[string]interface{})
+
+	// Pre-convert Draft-07 / 2020-12 constraints that Google Schema proto doesn't have fields for
+	if exMin, ok := m["exclusiveMinimum"]; ok {
+		if _, hasMin := m["minimum"]; !hasMin {
+			switch num := exMin.(type) {
+			case float64, int, int64, float32:
+				clean["minimum"] = num
+			}
+		}
+	}
+	if exMax, ok := m["exclusiveMaximum"]; ok {
+		if _, hasMax := m["maximum"]; !hasMax {
+			switch num := exMax.(type) {
+			case float64, int, int64, float32:
+				clean["maximum"] = num
+			}
+		}
+	}
+	if constVal, ok := m["const"]; ok {
+		if _, hasEnum := m["enum"]; !hasEnum {
+			clean["enum"] = []interface{}{constVal}
+		}
+	}
+	if examples, ok := m["examples"].([]interface{}); ok && len(examples) > 0 {
+		if _, hasEx := m["example"]; !hasEx {
+			clean["example"] = examples[0]
+		}
+	}
+
 	for k, v := range m {
-		if k == "$schema" || k == "additionalProperties" {
+		// Strict allowlist: strip all non-standard / unsupported JSON Schema fields that trigger Google RPC 400
+		if !allowedGeminiSchemaFields[k] {
 			continue
 		}
 		if k == "type" {
@@ -791,11 +875,15 @@ func sanitizeSchemaInternal(schema interface{}, isRoot bool) interface{} {
 				clean[k] = sanitizeSchemaInternal(itemMap, false)
 				continue
 			} else if itemList, isList := v.([]interface{}); isList {
-				var cleanList []interface{}
-				for _, it := range itemList {
-					cleanList = append(cleanList, sanitizeSchemaInternal(it, false))
+				if len(itemList) == 1 {
+					clean[k] = sanitizeSchemaInternal(itemList[0], false)
+				} else if len(itemList) > 1 {
+					var cleanBranches []interface{}
+					for _, it := range itemList {
+						cleanBranches = append(cleanBranches, sanitizeSchemaInternal(it, false))
+					}
+					clean[k] = map[string]interface{}{"oneOf": cleanBranches}
 				}
-				clean[k] = cleanList
 				continue
 			}
 		}

@@ -477,7 +477,7 @@ let currentTab = 'dashboard';
                 </div>
                 <div class="mb-3">
                   <div class="flex justify-between text-xs mb-1">
-                    <span class="text-slate-600 font-medium">Gemini 5 Jam (Session)</span>
+                    <span class="text-slate-600 font-medium">Gemini Sesi (5 Jam)</span>
                     <strong class="text-sky-800">${formatQuotaPercent(gemini5h)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-sky-600" style="width: ${gemini5h}%;"></div></div>
@@ -485,7 +485,7 @@ let currentTab = 'dashboard';
                 </div>
                 <div>
                   <div class="flex justify-between text-xs mb-1">
-                    <span class="text-slate-600 font-medium">Gemini Mingguan</span>
+                    <span class="text-slate-600 font-medium">Gemini Mingguan (7 Hari)</span>
                     <strong class="text-sky-800">${formatQuotaPercent(geminiWk)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-sky-600" style="width: ${geminiWk}%;"></div></div>
@@ -518,7 +518,7 @@ let currentTab = 'dashboard';
                 </div>
                 <div class="mb-3">
                   <div class="flex justify-between text-xs mb-1">
-                    <span class="text-slate-600 font-medium">Claude 5 Jam (Session)</span>
+                    <span class="text-slate-600 font-medium">Claude Sesi (5 Jam)</span>
                     <strong class="text-purple-800">${formatQuotaPercent(claude5h)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-purple-600" style="width: ${claude5h}%;"></div></div>
@@ -526,7 +526,7 @@ let currentTab = 'dashboard';
                 </div>
                 <div>
                   <div class="flex justify-between text-xs mb-1">
-                    <span class="text-slate-600 font-medium">Claude Mingguan</span>
+                    <span class="text-slate-600 font-medium">Claude Mingguan (7 Hari)</span>
                     <strong class="text-purple-800">${formatQuotaPercent(claudeWk)}</strong>
                   </div>
                   <div class="progress-bar"><div class="progress-fill bg-purple-600" style="width: ${claudeWk}%;"></div></div>
@@ -592,7 +592,7 @@ let currentTab = 'dashboard';
       try {
         const syncPromise = fetch('/api/accounts/sync', { method: 'POST' }).then(async res => {
           if (!res.ok) {
-            await Promise.all((accountsData || []).map(a => 
+            await Promise.all((accountsData || []).map(a =>
               fetch('/api/accounts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -896,6 +896,10 @@ let currentTab = 'dashboard';
                         <span class="text-slate-500">Total Request:</span>
                         <span class="font-bold text-slate-800">${acc.totalRequests || 0}</span>
                       </div>
+                      <div class="flex justify-between">
+                        <span class="text-slate-500">Total Token Terpakai:</span>
+                        <span class="font-bold text-blue-600 font-mono">${(acc.totalTokens || 0).toLocaleString()}</span>
+                      </div>
                       ${acc.tokenExpiresAt ? `
                         <div class="flex justify-between">
                           <span class="text-slate-500">Token Expire:</span>
@@ -904,7 +908,7 @@ let currentTab = 'dashboard';
                       ` : ''}
                       <div class="flex justify-between items-center">
                         <span class="text-slate-500 inline-flex items-center gap-1">
-                          ${svgIcon('cpu', 'w-3 h-3 text-blue-500')} Diagnosis RTT:
+                          Diagnosis RTT:
                         </span>
                         <span data-account-rtt="${escapeHtml(acc.email)}" class="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded border ${rttClass}" title="${rttTitle}">
                           ${rttText}
@@ -1489,30 +1493,54 @@ let currentTab = 'dashboard';
 
     function handlePgAccountChange(val) {
       pgSelectedAccount = val;
+      const sess = getActivePlaygroundSession();
+      if (sess) {
+        sess.account = val;
+        savePlaygroundSessions();
+      }
     }
 
     function handlePgModelChange(val) {
       pgSelectedModel = val;
+      const sess = getActivePlaygroundSession();
+      if (sess) {
+        sess.model = val;
+        savePlaygroundSessions();
+      }
     }
 
     function handlePgProjectChange(val) {
       pgSelectedProject = val;
+      const sess = getActivePlaygroundSession();
+      if (sess) {
+        sess.project = val;
+        savePlaygroundSessions();
+      }
     }
 
     function updatePlaygroundProjectsSelect() {
-      // Re-render chat messages to update initial setup card if empty
-      if (!playgroundHistory || playgroundHistory.length === 0) {
-        renderPlaygroundMessages();
-      }
+      const el = document.getElementById('pgProject');
+      if (!el) return;
+      const curr = pgSelectedProject || el.value;
+      let opts = '<option value="">Tanpa Proyek (General)</option>';
+      (projectsData || []).forEach(p => {
+        const badge = p.techStack ? ` [${p.techStack}]` : '';
+        opts += `<option value="${escapeHtml(p.name)}" ${curr === p.name ? 'selected' : ''}>${escapeHtml(p.name)}${badge}</option>`;
+      });
+      el.innerHTML = opts;
     }
 
     function updatePgProjectBadge() {}
 
     function updatePgAccountsDropdown() {
-      // Re-render chat messages to update initial setup card if empty
-      if (!playgroundHistory || playgroundHistory.length === 0) {
-        renderPlaygroundMessages();
-      }
+      const el = document.getElementById('pgAccount');
+      if (!el) return;
+      const curr = pgSelectedAccount || el.value;
+      let opts = '<option value="">Auto (Account Pool)</option>';
+      (accountsData || []).forEach(acc => {
+        opts += `<option value="${escapeHtml(acc.email)}" ${curr === acc.email ? 'selected' : ''}>${escapeHtml(acc.name || acc.email)} (${acc.isActive ? 'Active' : 'Disabled'})</option>`;
+      });
+      el.innerHTML = opts;
     }
 
     function updatePgAccountBadge() {}
@@ -1561,7 +1589,7 @@ let currentTab = 'dashboard';
                 </div>
               </div>
               <p class="text-xs text-slate-500 leading-relaxed">${escapeHtml(sk.description)}</p>
-              
+
               <!-- Injeksi System Prompt Collapsible -->
               <details class="text-[11px] bg-slate-50 border border-slate-200/70 rounded-xl overflow-hidden mt-2" open>
                 <summary class="px-3 py-1.5 font-bold text-slate-700 cursor-pointer select-none bg-slate-100/70 hover:bg-slate-100 transition-colors flex items-center justify-between">
@@ -1757,13 +1785,11 @@ let currentTab = 'dashboard';
       if (!container) return;
 
       const defaultSkills = [
-        { id: 'grill-me', name: 'Grill Me', desc: 'Autonomous Prompt Architect & Interview', enabled: true },
-        { id: 'rtk', name: 'RTK', desc: 'Real-Time Knowledge & Reasoning', enabled: true },
-        { id: 'context_mode', name: 'Context Mode', desc: 'Context Engineering', enabled: true },
-        { id: 'codegraph', name: 'CodeGraph', desc: 'Symbol & Dependency Knowledge', enabled: true },
-        { id: 'caveman', name: 'Caveman', desc: 'Terse & No Fluff', enabled: true },
-        { id: 'ponytail', name: 'Ponytail', desc: 'Lazy Senior Dev', enabled: true },
-        { id: 'architect', name: 'Architect', desc: 'Software Architect', enabled: true },
+        { id: 'caveman', name: 'Caveman', desc: 'Terse & No Fluff (skills.sh / juliusbrussee)', enabled: true },
+        { id: 'ponytail', name: 'Ponytail', desc: 'Lazy Senior Dev (skills.sh / dietrichgebert)', enabled: true },
+        { id: 'token-efficiency', name: 'Token Efficiency', desc: 'Smart Output & Scope Execution (skills.sh / delphine-l)', enabled: true },
+        { id: 'write-concisely', name: 'Write Concisely', desc: 'Elements of Style (skills.sh / neolabhq)', enabled: true },
+        { id: 'grill-me', name: 'Grill Me', desc: 'Interview & Shared Understanding (skills.sh / mattpocock)', enabled: true },
       ];
 
       // Use active skills from skillsData if loaded, otherwise fallback to default active list
@@ -1821,10 +1847,10 @@ let currentTab = 'dashboard';
     async function typewriteAssistantMessage(assistantTurn, fullText, sess) {
       if (!fullText) return;
       assistantTurn.content = '';
-      
+
       const totalLen = fullText.length;
       // Hitung ukuran chunk dinamis agar animasi typing mengalir mulus ~1.5 - 2.5 detik
-      const stepChunk = Math.max(3, Math.ceil(totalLen / 120));
+      const stepChunk = Math.max(4, Math.ceil(totalLen / 90));
       let currentIdx = 0;
 
       while (currentIdx < totalLen) {
@@ -1835,10 +1861,20 @@ let currentTab = 'dashboard';
 
         currentIdx = Math.min(totalLen, currentIdx + stepChunk);
         assistantTurn.content = fullText.slice(0, currentIdx);
-        renderPlaygroundMessages();
 
-        // 16ms delay (~60fps typing tick)
-        await new Promise(r => setTimeout(r, 16));
+        // Targeted DOM update during typing to avoid full rerenders
+        const activeBubble = document.querySelector('.chat-bubble.assistant.is-streaming');
+        if (activeBubble) {
+          activeBubble.innerHTML = renderAssistantBubble(assistantTurn, true);
+          const el = document.getElementById('pgMessages');
+          if (el && !userScrolledUpInPlayground) {
+            el.scrollTop = el.scrollHeight;
+          }
+        } else {
+          renderPlaygroundMessages();
+        }
+
+        await new Promise(r => setTimeout(r, 18));
       }
 
       assistantTurn.content = fullText;
@@ -1888,11 +1924,11 @@ let currentTab = 'dashboard';
         type: 'function',
         function: {
           name: 'web_search',
-          description: 'Cari informasi terkini di web HANYA jika query pengguna secara eksplisit menanyakan peristiwa/berita hari ini, rilis baru, cuaca, atau info kualitas udara real-time. Jika menanyakan cuaca atau indeks kualitas udara (AQI/IQAir), gunakan kata kunci pencarian real-time dan baca URL resmi platform (seperti iqair.com atau bmkg). DILARANG memanggil tool ini untuk konsep pemrograman atau matematika.',
+          description: 'Cari informasi terkini di web.',
           parameters: {
             type: 'object',
             properties: {
-              query: { type: 'string', description: 'Kata kunci pencarian spesifik (contoh: "indeks kualitas udara palembang iqair", "berita palembang hari ini")' }
+              query: { type: 'string', description: 'Kata kunci pencarian spesifik' }
             },
             required: ['query']
           }
@@ -1902,7 +1938,7 @@ let currentTab = 'dashboard';
         type: 'function',
         function: {
           name: 'fetch_web_page',
-          description: 'Buka dan baca isi halaman web, portal pemantau cuaca/kualitas udara (seperti iqair.com/id/indonesia/south-sumatra/palembang), atau dokumentasi resmi library. Gunakan untuk mendapatkan angka live faktual dan data detail terkini dari suatu URL.',
+          description: 'Buka dan baca isi halaman web atau dokumentasi resmi dari suatu URL.',
           parameters: {
             type: 'object',
             properties: {
@@ -1963,7 +1999,7 @@ let currentTab = 'dashboard';
       const assistantTurn = { role: 'assistant', content: '', toolActivities: [] };
       playgroundHistory.push(assistantTurn);
 
-      // Status generating & skeleton Great Sage langsung di-render ke UI
+      // Status generating placeholder langsung di-render ke UI
       playgroundAbortController = new AbortController();
       updatePlaygroundButtonState(true);
       renderPlaygroundMessages(true);
@@ -1975,35 +2011,14 @@ let currentTab = 'dashboard';
         };
         if (targetAccount) headers['x-target-account'] = targetAccount;
         if (selectedProject) headers['x-project'] = selectedProject;
-
-        const currentDateString = new Date().toLocaleDateString('id-ID', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
-
-        const playgroundSystemInstruction = {
-          role: 'system',
-          content: 'IDENTITAS & PRINSIP UTAMA: GREAT SAGE (CIEL)\n' +
-            `WAKTU SISTEM SAAT INI: Hari ini adalah ${currentDateString}.\n` +
-            '1. IDENTITAS: Anda adalah Great Sage (Ciel), Principal Software Architect dan AI System Advisor.\n' +
-            '2. KOMUNIKASI & PENALARAN: Berikan analisis mendalam, lugas, deterministik, dan berlandaskan prinsip software engineering serta fakta data yang provable. Hindari basa-basi retoris dan perbincangan tidak relevan.\n' +
-            '3. PENGAMBIL KEPUTUSAN TEGAS: Timbang trade-off teknis secara objektif, lalu berikan rekomendasi definitive yang terarah, bukan sekadar opsi mengambang tanpa pendirian.\n' +
-            '4. REKAYASA PROMPT AI AGENT: Ketika diminta merancang prompt atau spesifikasi untuk agen otonom (Hermes, Claude Code, Cline, Cursor), susun dengan kepadatan semantik tinggi, pembatas struktural XML/Markdown fences, invariant ketat, state machine deterministik, dan skema output terverifikasi.\n' +
-            '5. FOKUS ARSITEKTUR & DESAIN SISTEM: Utamakan perancangan arsitektur, spesifikasi PRD/RFC, skema data, dan analisis sistem. Berikan potongan konfigurasi (misal YAML, JSON, cURL, Docker, Nginx) hanya jika diminta atau esensial untuk solusi, hindari membuat implementasi kode aplikasi mentah (boilerplate full-app).\n' +
-            '6. EFISIENSI TOOLS & KEDALAMAN INFORMASI:\n' +
-            '   - JANGAN memanggil tool pencarian untuk hal konseptual, logika, pemrograman, atau waktu sistem hari ini (sudah tertera di atas).\n' +
-            '   - Panggil tool web_search/fetch_web_page HANYA bila Anda memerlukan data kejadian dunia nyata hari ini, rilis baru setelah cutoff Maret 2026, atau dokumen eksternal yang tidak Anda ketahui.\n' +
-            '   - KETIKA MENYAMPAIKAN BERITA/HASIL SEARCH: Sajikan informasi secara kaya, berbobot, dan bernilai berita lengkap (konteks kejadian, tanggal rilis, pihak terlibat, metrik data riil, dan dampaknya).',
-        };
+        if (currentPlaygroundSessionId) headers['x-session-id'] = currentPlaygroundSessionId;
+        if (keysData && keysData.length > 0 && keysData[0].key) {
+          headers['Authorization'] = `Bearer ${keysData[0].key}`;
+        }
 
         let loopCount = 0;
         const maxLoops = 3;
-        let activeMessages = [
-          playgroundSystemInstruction,
-          ...playgroundHistory.slice(0, -1).map(m => ({ role: m.role, content: m.content })),
-        ];
+        let activeMessages = playgroundHistory.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
 
         while (loopCount < maxLoops) {
           loopCount++;
@@ -2070,7 +2085,7 @@ let currentTab = 'dashboard';
             break;
           }
 
-          // Eksekusi tiap tool call yang diminta Great Sage
+          // Eksekusi tiap tool call yang diminta model
           for (const tc of pendingToolCalls) {
             let parsedArgs = {};
             try {
@@ -2161,14 +2176,24 @@ let currentTab = 'dashboard';
 
             activeMessages.push({
               role: 'user',
-              content: `Berikut adalah data penelusuran live real-time yang baru saja ditemukan oleh sistem:\n${toolSummary}\n\n` +
-                `INSTRUKSI: Buat laporan berita berdasarkan HASIL PENCARIAN DI ATAS untuk menjawab pertanyaan saya. ` +
-                `WAJIB cantumkan sumber berita dan tautan/link URL yang ada di data pencarian ke dalam judul atau bagian referensi setiap poin (format: [Judul Berita](URL)). ` +
-                `Sertakan juga tanggal/waktu rilis berita tersebut dan jelaskan substansi peristiwanya secara lengkap dan jelas!`
+              content: `Berikut adalah data dan hasil eksekusi alat / penelusuran sistem:\n${toolSummary}\n\n` +
+                `INSTRUKSI: Gunakan data di atas untuk menjawab dan menyelesaikan instruksi saya secara akurat, relevan, dan terstruktur. Cantumkan tautan/URL referensi jika relevan.`
             });
 
           // Matikan tools pada giliran berikutnya agar LLM fokus menyintesis jawaban akhir
           useWebTools = false;
+        }
+
+        // Safety fallback: Jika loop selesai dan model tidak mengisi teks konten setelah eksekusi tool,
+        // sintesiskan data referensi secara otomatis agar tidak kosong
+        if (!assistantTurn.content && assistantTurn.toolActivities && assistantTurn.toolActivities.length > 0) {
+          let summary = 'Berikut adalah informasi yang berhasil dihimpun dari penelusuran web:\n\n';
+          assistantTurn.toolActivities.forEach((act, i) => {
+            if (act.content) {
+              summary += `${act.content}\n\n`;
+            }
+          });
+          assistantTurn.content = summary.trim();
         }
       } catch (err) {
         console.error('Playground fetch error:', err);
@@ -2294,15 +2319,24 @@ let currentTab = 'dashboard';
       const codeBlocks = [];
       let text = content.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
         const id = `__CODE_BLOCK_${codeBlocks.length}__`;
-        const displayLang = (lang || 'code').toUpperCase();
+        const cleanLang = (lang || 'code').trim().toLowerCase();
+        const displayLang = cleanLang.toUpperCase();
+        const artId = registerPlaygroundArtifact(cleanLang, code);
+        const canPreview = isPreviewableArtifact(cleanLang, code);
         const blockHtml = `
           <div class="my-3 rounded-xl border border-slate-700/80 bg-slate-950 overflow-hidden shadow-inner text-xs not-prose">
             <div class="flex items-center justify-between px-3.5 py-1.5 bg-slate-900 border-b border-slate-800 text-[11px] text-slate-400 font-mono">
               <span class="font-semibold text-slate-300 tracking-wider">${escapeHtml(displayLang)}</span>
-              <button type="button" class="inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-slate-800 hover:text-white transition-colors text-slate-400" onclick="copyCodeBlock(this)">
-                <svg class="w-3 h-3"><use href="#icon-copy"></use></svg>
-                <span>Salin</span>
-              </button>
+              <div class="flex items-center gap-1.5">
+                <button type="button" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-600 hover:text-white transition-colors text-indigo-300 font-semibold cursor-pointer text-[10.5px]" onclick="openArtifactInCanvas('${artId}')" title="Buka dan render langsung di Panel Canvas">
+                  <svg class="w-3 h-3"><use href="#icon-layers"></use></svg>
+                  <span>${canPreview ? 'Preview Canvas' : 'Buka di Canvas'}</span>
+                </button>
+                <button type="button" class="inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-slate-800 hover:text-white transition-colors text-slate-400 cursor-pointer text-[10.5px]" onclick="copyCodeBlock(this)">
+                  <svg class="w-3 h-3"><use href="#icon-copy"></use></svg>
+                  <span>Salin</span>
+                </button>
+              </div>
             </div>
             <pre class="p-3.5 overflow-x-auto font-mono text-slate-100 text-[11.5px] leading-relaxed"><code>${escapeHtml(code)}</code></pre>
           </div>
@@ -2390,8 +2424,11 @@ let currentTab = 'dashboard';
         .replace(/(?:<br\s*\/?>|\n)*\s*(<blockquote[^>]*>)/gi, '$1')
         .replace(/(<\/blockquote>)\s*(?:<br\s*\/?>|\n)*/gi, '$1');
 
-      // d. Konversi baris baru: semua multi-newline (\n\n atau lebih) dijadikan cukup 1 spasi baris (<br/>)
-      formatted = formatted.replace(/\n+/g, '<br/>');
+      // d. Konversi baris baru: pertahankan pemisahan paragraf (\n\n) secara proporsional
+      formatted = formatted
+        .replace(/\r\n/g, '\n')
+        .replace(/\n{2,}/g, '<br/><br/>')
+        .replace(/\n/g, '<br/>');
 
       // 12. Kembalikan tabel & bersihkan tag <br/> berlebih di sekitarnya
       tableRes.tables.forEach((tbl, idx) => {
@@ -2597,7 +2634,7 @@ let currentTab = 'dashboard';
           </form>
           <div class="flex justify-end pt-3 mt-2 border-t border-slate-100">
             <button class="btn btn-sm btn-primary text-xs px-4 py-2 shadow-xs flex items-center gap-2" onclick="submitGrillAnswers('${qFormId}')">
-              ${svgIcon('play', 'icon-sm')} Kirim Pilihan &amp; Generate Master Prompt
+              ${svgIcon('play', 'icon-sm')} Kirim Pilihan &amp; Lanjutkan
             </button>
           </div>
         </div>
@@ -2678,7 +2715,7 @@ let currentTab = 'dashboard';
 
       const input = document.getElementById('pgInput');
       if (input) {
-        input.value = `Berikut adalah preferensi saya:\n` + answers.join('\n') + `\n\nSilakan lanjutkan dan rumuskan Autonomous Master Prompt sekarang.`;
+        input.value = `Berikut adalah preferensi saya:\n` + answers.join('\n') + `\n\nSilakan lanjutkan pembahasan atau rekomendasi berdasarkan preferensi di atas.`;
         sendPlaygroundMessage();
       }
     }
@@ -2710,7 +2747,7 @@ let currentTab = 'dashboard';
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `great-sage-ciel-${Date.now()}.md`);
+      link.setAttribute('download', `assistant-response-${Date.now()}.md`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -2810,6 +2847,11 @@ let currentTab = 'dashboard';
       if (!target) return;
       currentPlaygroundSessionId = sessionId;
       playgroundHistory = target.messages || [];
+      playgroundArtifacts = [];
+      activeCanvasArtifactId = null;
+      closePlaygroundCanvas();
+      const badge = document.getElementById('pgCanvasBadge');
+      if (badge) badge.classList.add('hidden');
       savePlaygroundSessions();
       renderPlaygroundSessionsList();
       renderPlaygroundMessages(true);
@@ -2859,6 +2901,23 @@ let currentTab = 'dashboard';
       const sess = getActivePlaygroundSession();
       if (titleEl && sess) {
         titleEl.textContent = sess.title || 'Percakapan Baru';
+      }
+      if (sess) {
+        if (sess.model) {
+          pgSelectedModel = sess.model;
+          const modelEl = document.getElementById('pgModel');
+          if (modelEl) modelEl.value = sess.model;
+        }
+        if (sess.account !== undefined) {
+          pgSelectedAccount = sess.account;
+          const accEl = document.getElementById('pgAccount');
+          if (accEl) accEl.value = sess.account;
+        }
+        if (sess.project !== undefined) {
+          pgSelectedProject = sess.project;
+          const projEl = document.getElementById('pgProject');
+          if (projEl) projEl.value = sess.project;
+        }
       }
     }
 
@@ -2915,6 +2974,376 @@ let currentTab = 'dashboard';
       el.style.height = Math.min(el.scrollHeight, 128) + 'px';
     }
 
+    // === PLAYGROUND CANVAS & ARTIFACTS SYSTEM ===
+    let playgroundArtifacts = [];
+    let activeCanvasArtifactId = null;
+    let currentCanvasMode = 'preview'; // 'preview' | 'code'
+
+    function isPreviewableArtifact(lang, code) {
+      const l = (lang || '').toLowerCase();
+      const c = (code || '').trim().toLowerCase();
+      if (['html', 'htm', 'svg', 'xml', 'md', 'markdown'].includes(l)) return true;
+      if (c.includes('<!doctype') || c.includes('<html') || c.startsWith('<svg')) return true;
+      if (l === 'js' || l === 'javascript') return true;
+      return false;
+    }
+
+    function detectArtifactTitle(lang, code, index) {
+      const l = (lang || '').toLowerCase();
+      const c = (code || '').trim();
+      if (l === 'html' || l === 'htm' || c.toLowerCase().includes('<!doctype') || c.toLowerCase().includes('<html')) {
+        const titleMatch = c.match(/<title>([^<]+)<\/title>/i);
+        if (titleMatch && titleMatch[1].trim()) return titleMatch[1].trim();
+        return 'index.html';
+      }
+      if (l === 'svg' || c.startsWith('<svg')) {
+        return 'graphic.svg';
+      }
+      if (l === 'javascript' || l === 'js') {
+        return 'app.js';
+      }
+      if (l === 'typescript' || l === 'ts') {
+        return 'main.ts';
+      }
+      if (l === 'css') {
+        return 'style.css';
+      }
+      if (l === 'python' || l === 'py') {
+        return 'main.py';
+      }
+      if (l === 'go' || l === 'golang') {
+        return 'main.go';
+      }
+      if (l === 'json') {
+        return 'data.json';
+      }
+      if (l === 'sql') {
+        return 'query.sql';
+      }
+      if (l === 'md' || l === 'markdown') {
+        const h1Match = c.match(/^#\s+(.+)$/m);
+        if (h1Match && h1Match[1].trim()) return h1Match[1].trim();
+        return 'document.md';
+      }
+      return `${(lang || 'code').toUpperCase()} Snippet #${index + 1}`;
+    }
+
+    function registerPlaygroundArtifact(lang, code) {
+      const cleanLang = (lang || 'code').trim().toLowerCase();
+      const idx = playgroundArtifacts.length;
+      const id = `art_${Date.now()}_${idx}`;
+      const title = detectArtifactTitle(cleanLang, code, idx);
+
+      playgroundArtifacts.push({
+        id,
+        title,
+        lang: cleanLang,
+        code,
+        createdAt: new Date()
+      });
+
+      const badge = document.getElementById('pgCanvasBadge');
+      if (badge) badge.classList.remove('hidden');
+
+      return id;
+    }
+
+    function openArtifactInCanvas(artId) {
+      const art = playgroundArtifacts.find(a => a.id === artId);
+      if (!art) return;
+      activeCanvasArtifactId = artId;
+
+      const panel = document.getElementById('pgCanvasPanel');
+      if (panel) {
+        panel.classList.remove('hidden');
+      }
+      const label = document.getElementById('pgToggleCanvasLabel');
+      if (label) label.textContent = 'Tutup Canvas';
+
+      const titleEl = document.getElementById('pgCanvasTitle');
+      if (titleEl) titleEl.textContent = art.title;
+      const langEl = document.getElementById('pgCanvasLang');
+      if (langEl) langEl.textContent = art.lang.toUpperCase();
+      const lines = art.code.split('\n').length;
+      const linesEl = document.getElementById('pgCanvasLines');
+      if (linesEl) linesEl.textContent = `${lines} baris`;
+      const charEl = document.getElementById('pgCanvasCharCount');
+      if (charEl) charEl.textContent = `${art.code.length.toLocaleString('id-ID')} karakter`;
+
+      const codeBlock = document.getElementById('pgCanvasCodeBlock');
+      if (codeBlock) {
+        codeBlock.textContent = art.code;
+      }
+
+      const canPreview = isPreviewableArtifact(art.lang, art.code);
+      if (canPreview) {
+        setCanvasViewMode('preview');
+        renderArtifactPreview(art);
+      } else {
+        setCanvasViewMode('code');
+      }
+    }
+
+    function compileArtifactHtml(art) {
+      const lang = (art.lang || '').toLowerCase();
+      const code = (art.code || '').trim();
+
+      if (lang === 'html' || lang === 'htm' || code.toLowerCase().includes('<!doctype') || code.toLowerCase().includes('<html')) {
+        if (code.toLowerCase().includes('<html')) {
+          return code;
+        }
+        return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(art.title)}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 1.5rem; background: #ffffff; color: #1e293b; }
+  </style>
+</head>
+<body>
+  ${code}
+</body>
+</html>`;
+      }
+
+      if (lang === 'svg' || code.startsWith('<svg')) {
+        return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(#1e293b 1px, #0f172a 1px); background-size: 20px 20px; font-family: sans-serif; padding: 2rem; }
+    svg { max-width: 90vw; max-height: 85vh; filter: drop-shadow(0 10px 25px rgba(0,0,0,0.5)); }
+  </style>
+</head>
+<body>
+  ${code}
+</body>
+</html>`;
+      }
+
+      if (lang === 'javascript' || lang === 'js') {
+        return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JavaScript Runner</title>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; padding: 1rem; margin: 0; background: #090d16; color: #f8fafc; font-size: 12.5px; line-height: 1.6; }
+    .header { font-weight: bold; color: #38bdf8; margin-bottom: 0.75rem; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; display: flex; justify-content: space-between; }
+    #console-output { white-space: pre-wrap; word-break: break-all; }
+    .log-entry { margin-bottom: 0.25rem; }
+    .log-warn { color: #f59e0b; }
+    .log-error { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span>// Output Eksekusi Console:</span>
+    <span style="color: #64748b; font-size: 11px;">Sandbox JS</span>
+  </div>
+  <div id="console-output"></div>
+  <script>
+    const out = document.getElementById('console-output');
+    function appendLog(cls, ...args) {
+      const line = document.createElement('div');
+      line.className = 'log-entry ' + cls;
+      line.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
+      out.appendChild(line);
+    }
+    console.log = (...args) => appendLog('', ...args);
+    console.warn = (...args) => appendLog('log-warn', '[WARN]', ...args);
+    console.error = (...args) => appendLog('log-error', '[ERROR]', ...args);
+    console.info = (...args) => appendLog('', '[INFO]', ...args);
+    try {
+      ${code}
+    } catch(err) {
+      console.error(err.name + ': ' + err.message);
+    }
+  <\/script>
+</body>
+</html>`;
+      }
+
+      return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: monospace; padding: 1.5rem; background: #0f172a; color: #f1f5f9; font-size: 12px; line-height: 1.6; margin: 0; }
+    pre { white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <pre><code>${escapeHtml(code)}</code></pre>
+</body>
+</html>`;
+    }
+
+    function renderArtifactPreview(art) {
+      const iframe = document.getElementById('pgCanvasIframe');
+      const mdContainer = document.getElementById('pgCanvasMarkdownContainer');
+
+      if (art.lang === 'md' || art.lang === 'markdown') {
+        if (iframe) iframe.classList.add('hidden');
+        if (mdContainer) {
+          mdContainer.classList.remove('hidden');
+          mdContainer.innerHTML = formatChatContent(art.code, false);
+        }
+      } else {
+        if (mdContainer) mdContainer.classList.add('hidden');
+        if (iframe) {
+          iframe.classList.remove('hidden');
+          const compiled = compileArtifactHtml(art);
+          iframe.srcdoc = compiled;
+        }
+      }
+    }
+
+    function setCanvasViewMode(mode) {
+      currentCanvasMode = mode;
+      const previewContainer = document.getElementById('pgCanvasPreviewContainer');
+      const codeContainer = document.getElementById('pgCanvasCodeContainer');
+      const previewBtn = document.getElementById('pgCanvasModePreviewBtn');
+      const codeBtn = document.getElementById('pgCanvasModeCodeBtn');
+
+      if (mode === 'preview') {
+        if (previewContainer) previewContainer.classList.remove('hidden');
+        if (codeContainer) codeContainer.classList.add('hidden');
+        if (previewBtn) {
+          previewBtn.className = 'px-2.5 py-0.5 rounded-md text-white bg-slate-800 font-semibold shadow-2xs transition-all cursor-pointer';
+        }
+        if (codeBtn) {
+          codeBtn.className = 'px-2.5 py-0.5 rounded-md hover:text-white transition-all cursor-pointer';
+        }
+        if (activeCanvasArtifactId) {
+          const art = playgroundArtifacts.find(a => a.id === activeCanvasArtifactId);
+          if (art) renderArtifactPreview(art);
+        }
+      } else {
+        if (previewContainer) previewContainer.classList.add('hidden');
+        if (codeContainer) codeContainer.classList.remove('hidden');
+        if (codeBtn) {
+          codeBtn.className = 'px-2.5 py-0.5 rounded-md text-white bg-slate-800 font-semibold shadow-2xs transition-all cursor-pointer';
+        }
+        if (previewBtn) {
+          previewBtn.className = 'px-2.5 py-0.5 rounded-md hover:text-white transition-all cursor-pointer';
+        }
+      }
+    }
+
+    function togglePlaygroundCanvas() {
+      const panel = document.getElementById('pgCanvasPanel');
+      if (!panel) return;
+      const isHidden = panel.classList.contains('hidden');
+      if (isHidden) {
+        openPlaygroundCanvas();
+      } else {
+        closePlaygroundCanvas();
+      }
+    }
+
+    function openPlaygroundCanvas() {
+      const panel = document.getElementById('pgCanvasPanel');
+      if (!panel) return;
+      panel.classList.remove('hidden');
+      const label = document.getElementById('pgToggleCanvasLabel');
+      if (label) label.textContent = 'Tutup Canvas';
+
+      if (!activeCanvasArtifactId && playgroundArtifacts.length > 0) {
+        openArtifactInCanvas(playgroundArtifacts[playgroundArtifacts.length - 1].id);
+      } else if (!activeCanvasArtifactId) {
+        const welcomeArtId = registerPlaygroundArtifact('html', `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center p-6 text-center">
+  <div class="w-16 h-16 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 flex items-center justify-center mb-4 shadow-lg">
+    <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+  </div>
+  <h2 class="text-xl font-black mb-2 text-white">Canvas & Live Code Preview</h2>
+  <p class="text-xs text-slate-400 max-w-sm leading-relaxed mb-4">Minta asisten AI membuat kode HTML, komponen web, script JS, SVG, atau dokumen spesifikasi untuk melihat preview interaktifnya di sini secara instan.</p>
+  <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800 text-[11px] font-mono text-indigo-300 border border-slate-700">
+    <span>💡 Contoh: "Buat halaman kalkulator modern dengan HTML dan Tailwind CSS"</span>
+  </div>
+</body>
+</html>`);
+        openArtifactInCanvas(welcomeArtId);
+      }
+    }
+
+    function closePlaygroundCanvas() {
+      const panel = document.getElementById('pgCanvasPanel');
+      if (!panel) return;
+      panel.classList.add('hidden');
+      const label = document.getElementById('pgToggleCanvasLabel');
+      if (label) label.textContent = 'Canvas';
+    }
+
+    function refreshCanvasPreview() {
+      if (!activeCanvasArtifactId) return;
+      const art = playgroundArtifacts.find(a => a.id === activeCanvasArtifactId);
+      if (!art) return;
+      renderArtifactPreview(art);
+      const statusEl = document.getElementById('pgCanvasStatusText');
+      if (statusEl) {
+        statusEl.textContent = 'Preview Diperbarui';
+        setTimeout(() => {
+          if (statusEl) statusEl.textContent = 'Sandbox Siap';
+        }, 1200);
+      }
+    }
+
+    function copyCanvasCode(btn) {
+      if (!activeCanvasArtifactId) return;
+      const art = playgroundArtifacts.find(a => a.id === activeCanvasArtifactId);
+      if (!art) return;
+      navigator.clipboard.writeText(art.code).then(() => {
+        if (btn) {
+          btn.classList.add('text-emerald-400');
+          setTimeout(() => btn.classList.remove('text-emerald-400'), 1500);
+        }
+        const statusEl = document.getElementById('pgCanvasStatusText');
+        if (statusEl) {
+          const orig = statusEl.textContent;
+          statusEl.textContent = 'Kode Berhasil Disalin!';
+          setTimeout(() => { if (statusEl) statusEl.textContent = orig; }, 1500);
+        }
+      });
+    }
+
+    function downloadCanvasArtifact() {
+      if (!activeCanvasArtifactId) return;
+      const art = playgroundArtifacts.find(a => a.id === activeCanvasArtifactId);
+      if (!art) return;
+      const ext = art.lang === 'html' ? 'html' : (art.lang === 'javascript' || art.lang === 'js' ? 'js' : (art.lang === 'svg' ? 'svg' : (art.lang === 'css' ? 'css' : (art.lang === 'markdown' || art.lang === 'md' ? 'md' : 'txt'))));
+      const blob = new Blob([art.code], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = art.title.includes('.') ? art.title : `${art.title}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function openCanvasInNewTab() {
+      if (!activeCanvasArtifactId) return;
+      const art = playgroundArtifacts.find(a => a.id === activeCanvasArtifactId);
+      if (!art) return;
+      const compiled = compileArtifactHtml(art);
+      const blob = new Blob([compiled], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    }
+
     function copyCodeBlock(btn) {
       const block = btn.closest('.not-prose');
       const code = block ? block.querySelector('pre code') : null;
@@ -2935,31 +3364,54 @@ let currentTab = 'dashboard';
     function renderAssistantBubble(m, isStreamingTurn) {
       let html = '';
 
-      // 1. Active tool call / Thinking state (HANYA tampil saat proses berjalan, persis seperti Searching the web di ChatGPT)
+      // 1. Completed tool activities (accordion)
+      if (m.toolActivities && m.toolActivities.length > 0) {
+        html += `
+          <div class="mb-3 space-y-1.5 not-prose">
+            ${m.toolActivities.map(act => `
+              <details class="text-[11px] bg-slate-50 border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs">
+                <summary class="px-2.5 py-1.5 font-bold text-slate-700 cursor-pointer select-none bg-slate-100/70 hover:bg-slate-100 transition-colors flex items-center justify-between">
+                  <div class="flex items-center gap-1.5 truncate mr-2">
+                    <svg class="w-3.5 h-3.5 text-blue-600 shrink-0"><use href="#icon-check"></use></svg>
+                    <span class="text-slate-800 font-semibold truncate">${escapeHtml(act.title || act.name)}</span>
+                    <span class="text-[10px] text-slate-400 font-mono">(${escapeHtml(act.source || act.name)})</span>
+                  </div>
+                  <span class="text-[10px] font-bold text-emerald-600 shrink-0">Hasil Alat &rsaquo;</span>
+                </summary>
+                <div class="p-2.5 bg-slate-900 text-slate-100 text-[10.5px] font-mono whitespace-pre-wrap break-words max-h-48 overflow-y-auto leading-relaxed border-t border-slate-800">
+                  ${escapeHtml(act.content || 'Tidak ada output')}
+                </div>
+              </details>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // 2. Active tool call / Thinking state
       if (m.activeTool) {
         html += `
-          <div class="my-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs font-sans text-xs not-prose">
+          <div class="my-2 p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/80 shadow-2xs font-sans text-xs not-prose">
             <div class="flex items-center gap-2.5">
-              <div class="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+              <div class="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-xs">
                 <svg class="w-3.5 h-3.5"><use href="#icon-search"></use></svg>
               </div>
               <div class="flex-1 min-w-0">
-                <div class="font-bold text-slate-800 truncate text-[11px]">${escapeHtml(m.activeTool.actionText || 'Mencari web')}: <span class="text-blue-700 font-mono">"${escapeHtml(m.activeTool.target)}"</span></div>
+                <div class="font-bold text-slate-800 truncate text-[11px]">${escapeHtml(m.activeTool.actionText || 'Mengeksekusi Alat')}: <span class="text-blue-700 font-mono">"${escapeHtml(m.activeTool.target)}"</span></div>
                 <div class="text-[10px] text-slate-500 truncate mt-0.5">
-                  <span>${escapeHtml(m.activeTool.source || 'Web')}</span> • <span class="text-slate-400">Menelusuri informasi terkini...</span>
+                  <span>${escapeHtml(m.activeTool.source || 'Sistem')}</span> • <span class="text-blue-600 font-medium">Memproses data...</span>
                 </div>
               </div>
               <div class="inline-flex items-center gap-1 pl-2 shrink-0">
-                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" style="animation-delay: -0.32s"></span>
-                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" style="animation-delay: -0.16s"></span>
-                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce" style="animation-delay: -0.32s"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce" style="animation-delay: -0.16s"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce"></span>
               </div>
             </div>
           </div>
         `;
       }
 
-      // 2. Main textual response
+      // 3. Main textual response
       if (m.content) {
         html += formatChatContent(m.content, isStreamingTurn && !m.activeTool);
         // Metadata badge (Model, Akun riil, Latensi)
@@ -2989,6 +3441,159 @@ let currentTab = 'dashboard';
       return html;
     }
 
+    function setPlaygroundInput(val) {
+      const input = document.getElementById('pgInput');
+      if (input) {
+        input.value = val;
+        autoResizePlaygroundInput(input);
+        input.focus();
+      }
+    }
+
+    const PLAYGROUND_PROMPT_POOLS = {
+      code: {
+        category: 'Optimasi & Solusi Kode',
+        icon: 'zap',
+        colorClass: 'text-emerald-500',
+        badge: 'Kode & Refactor',
+        prompts: [
+          'Bagaimana cara mendeteksi dan mencegah goroutine leak di Go pada pipeline concurrent berbeban tinggi?',
+          'Optimalkan fungsi Python ini agar bebas memory leak, efisien I/O-nya, dan manfaatkan async/await yang tepat.',
+          'Analisis potensi race condition pada implementasi sync.WaitGroup dan sync.RWMutex berikut serta berikan solusinya.',
+          'Bagaimana cara mengatasi N+1 query problem di PostgreSQL menggunakan query indexing, join, dan batching?',
+          'Bantu refactoring fungsi berbelit-belit ini menjadi modular dan idiomatik dengan prinsip Clean Architecture.',
+          'Teknik deteksi dan pencegahan re-render loop tak perlu pada React 19 hook useMemo, useCallback, dan custom state.',
+          'Bagaimana cara mengimplementasikan rate limiter algoritma Token Bucket berkinerja tinggi di Go?',
+          'Optimasi struktur data dan memory layout struct di Go untuk meminimalkan padding dan GC overhead.',
+          'Tuliskan implementasi worker pool dinamis dengan graceful shutdown dan backpressure handling di Go.',
+          'Bantu refactoring error handling bertingkat menjadi idiomatis menggunakan error wrapping fmt.Errorf %w di Go.',
+          'Bagaimana cara mengamankan database connection pool dari connection leak saat context timeout di backend?'
+        ]
+      },
+      architecture: {
+        category: 'Arsitektur Sistem',
+        icon: 'cpu',
+        colorClass: 'text-blue-500',
+        badge: 'Distributed System',
+        prompts: [
+          'Jelaskan trade-off mendalam arsitektur microservices vs modular monolith untuk skala sistem 50.000 req/detik.',
+          'Bagaimana cara merancang sistem antrean terdistribusi tahan banting menggunakan message broker (Kafka / RabbitMQ)?',
+          'Rancang pola Circuit Breaker dan Graceful Degradation saat upstream dependency mengalami outage atau latency spike.',
+          'Strategi mitigasi race condition pada pembaruan saldo transaksi finansial menggunakan optimistic concurrency locking.',
+          'Bagaimana mendesain strategi Zero-Downtime Deployment dan backward-compatible database schema migration?',
+          'Rancang arsitektur multi-tier caching (In-Memory Ring Buffer + Redis) dengan mekanisme cache invalidation deterministik.',
+          'Bagaimana merancang arsitektur event-driven dengan Transactional Outbox Pattern untuk menjamin konsistensi data?',
+          'Analisis trade-off ACID vs BASE pada sistem transaksi terdistribusi dan strategi pencegahan dual writes.',
+          'Rancang sistem rate limiting terdistribusi berbasis Redis Cluster dengan sliding window counter.'
+        ]
+      },
+      search: {
+        category: 'Pencarian Web & Riset Live',
+        icon: 'search',
+        colorClass: 'text-purple-500',
+        badge: 'Web & Live Info',
+        prompts: [
+          'Cari berita teknologi dan rilis model AI frontier terbaru yang diluncurkan minggu ini.',
+          'Periksa indeks kualitas udara (ISPU) resmi KLHK dan stasiun pemantau terdekat hari ini.',
+          'Cari dokumentasi dan panduan implementasi Claude Thinking di Anthropic Messages API terbaru.',
+          'Cek rilis stabil terbaru Go dan breaking changes penting yang perlu diwaspadai sebelum upgrade.',
+          'Cari benchmark performa terbaru Gemini 3.8 Flash dibandingkan model frontier lainnya.',
+          'Telusuri CVE security vulnerability terbaru pada container Docker dan ekosistem Linux kernel minggu ini.',
+          'Cari perkembangan terbaru mengenai arsitektur Transformer dan SSM (State Space Models) terkini.'
+        ]
+      },
+      schema: {
+        category: 'Desain Skema & API',
+        icon: 'layers',
+        colorClass: 'text-amber-500',
+        badge: 'Database & API',
+        prompts: [
+          'Bantu saya mendesain skema database relational PostgreSQL untuk sistem e-commerce multi-tenant yang scalable.',
+          'Rancang RESTful API dan OpenAPI 3.0 specification lengkap untuk modul billing dan transaksi pembayaran otomatis.',
+          'Desain skema RBAC (Role-Based Access Control) granular dengan matriks permission dan inheritance role.',
+          'Bagaimana struktur payload WebSocket dan event state terbaik untuk aplikasi real-time collaborative workspace?',
+          'Rancang skema audit log immutable di PostgreSQL untuk mencatat seluruh mutasi data sensitif secara forensik.',
+          'Bandingkan desain schema GraphQL vs REST API untuk dashboard analitik dengan filter multi-dimensi.'
+        ]
+      }
+    };
+
+    let activeQuickPromptIndexes = {
+      code: Math.floor(Math.random() * PLAYGROUND_PROMPT_POOLS.code.prompts.length),
+      architecture: Math.floor(Math.random() * PLAYGROUND_PROMPT_POOLS.architecture.prompts.length),
+      search: Math.floor(Math.random() * PLAYGROUND_PROMPT_POOLS.search.prompts.length),
+      schema: Math.floor(Math.random() * PLAYGROUND_PROMPT_POOLS.schema.prompts.length)
+    };
+
+    function pickRandomQuickPrompt(categoryKey, autoApply = true) {
+      const pool = PLAYGROUND_PROMPT_POOLS[categoryKey];
+      if (!pool || !pool.prompts || pool.prompts.length === 0) return '';
+
+      const len = pool.prompts.length;
+      let nextIdx = Math.floor(Math.random() * len);
+      // Hindari duplikasi kalimat yang sama berturut-turut jika ada lebih dari 1 opsi
+      if (len > 1 && nextIdx === activeQuickPromptIndexes[categoryKey]) {
+        nextIdx = (nextIdx + 1 + Math.floor(Math.random() * (len - 1))) % len;
+      }
+      activeQuickPromptIndexes[categoryKey] = nextIdx;
+      const promptText = pool.prompts[nextIdx];
+
+      if (autoApply) {
+        setPlaygroundInput(promptText);
+        // Perbarui teks preview di kartu jika kartu sedang tampil di layar
+        const previewEl = document.getElementById(`pgQuickPreview-${categoryKey}`);
+        if (previewEl) {
+          previewEl.textContent = promptText;
+          previewEl.classList.add('text-blue-600', 'font-medium');
+          setTimeout(() => {
+            if (previewEl) previewEl.classList.remove('text-blue-600', 'font-medium');
+          }, 600);
+        }
+      }
+      renderPlaygroundPromptChips();
+      return promptText;
+    }
+
+    function randomizeAllQuickPrompts() {
+      Object.keys(PLAYGROUND_PROMPT_POOLS).forEach(cat => {
+        pickRandomQuickPrompt(cat, false);
+      });
+      if (!playgroundHistory || playgroundHistory.length === 0) {
+        renderPlaygroundMessages();
+      }
+      renderPlaygroundPromptChips();
+    }
+
+    function renderPlaygroundPromptChips() {
+      const container = document.getElementById('pgQuickPromptChips');
+      if (!container) return;
+
+      const categories = ['code', 'architecture', 'search', 'schema'];
+      let html = `
+        <button type="button" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-all shrink-0 cursor-pointer text-[10.5px] border border-slate-200 shadow-2xs" onclick="randomizeAllQuickPrompts()" title="Acak rekomendasi prompt baru">
+          <svg class="w-3 h-3 text-blue-600"><use href="#icon-refresh-cw"></use></svg>
+          <span>Acak Ide</span>
+        </button>
+      `;
+
+      categories.forEach(cat => {
+        const pool = PLAYGROUND_PROMPT_POOLS[cat];
+        if (!pool) return;
+        const currentIdx = activeQuickPromptIndexes[cat] % pool.prompts.length;
+        const promptText = pool.prompts[currentIdx];
+        const shortLabel = promptText.length > 34 ? promptText.slice(0, 34) + '...' : promptText;
+
+        html += `
+          <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white hover:bg-blue-50 border border-slate-200/90 hover:border-blue-400 text-slate-700 hover:text-blue-700 transition-all shrink-0 cursor-pointer shadow-2xs group max-w-[260px] truncate" onclick="pickRandomQuickPrompt('${cat}', true)" title="${escapeHtml(promptText)}">
+            <svg class="w-3 h-3 ${pool.colorClass} shrink-0"><use href="#icon-${pool.icon}"></use></svg>
+            <span class="truncate text-[10.5px] font-medium">${escapeHtml(shortLabel)}</span>
+          </button>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
     function renderPlaygroundMessages(forceScroll = false) {
       const el = document.getElementById('pgMessages');
       if (!el) return;
@@ -2997,55 +3602,86 @@ let currentTab = 'dashboard';
       const wasAtBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) <= 60;
 
       if (!playgroundHistory || playgroundHistory.length === 0) {
-        // Tampilkan Card Konfigurasi Parameter (Model, Akun, Proyek) hanya saat sesi baru / chat belum dimulai
-        let accountOptions = '<option value="">Auto (Account Pool &amp; Failover)</option>';
-        accountsData.forEach(acc => {
-          accountOptions += `<option value="${escapeHtml(acc.email)}" ${pgSelectedAccount === acc.email ? 'selected' : ''}>${escapeHtml(acc.name || acc.email)} (${acc.isActive ? 'Active' : 'Disabled'})</option>`;
-        });
+        updatePgAccountsDropdown();
+        updatePlaygroundProjectsSelect();
+        updateActiveSessionHeader();
 
-        let projectOptions = '<option value="">Tanpa Konteks Proyek (General)</option>';
-        projectsData.forEach(p => {
-          const badge = p.techStack ? ` [${p.techStack}]` : '';
-          projectOptions += `<option value="${escapeHtml(p.name)}" ${pgSelectedProject === p.name ? 'selected' : ''}>${escapeHtml(p.name)}${badge}</option>`;
-        });
+        const codePrompt = PLAYGROUND_PROMPT_POOLS.code.prompts[activeQuickPromptIndexes.code % PLAYGROUND_PROMPT_POOLS.code.prompts.length];
+        const archPrompt = PLAYGROUND_PROMPT_POOLS.architecture.prompts[activeQuickPromptIndexes.architecture % PLAYGROUND_PROMPT_POOLS.architecture.prompts.length];
+        const searchPrompt = PLAYGROUND_PROMPT_POOLS.search.prompts[activeQuickPromptIndexes.search % PLAYGROUND_PROMPT_POOLS.search.prompts.length];
+        const schemaPrompt = PLAYGROUND_PROMPT_POOLS.schema.prompts[activeQuickPromptIndexes.schema % PLAYGROUND_PROMPT_POOLS.schema.prompts.length];
 
         el.innerHTML = `
-          <div class="h-full flex flex-col items-center justify-center p-4 max-w-lg mx-auto text-center">
-            <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md mb-3.5">
-              <svg class="w-6 h-6"><use href="#icon-sparkles"></use></svg>
+          <div class="h-full flex flex-col items-center justify-center p-4 max-w-xl mx-auto text-center my-auto">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-lg mb-3.5 ring-4 ring-blue-50">
+              <svg class="w-7 h-7"><use href="#icon-sparkles"></use></svg>
             </div>
-            <h3 class="text-base font-extrabold text-slate-800 mb-1">Mulai Percakapan Baru</h3>
-            <p class="text-xs text-slate-500 mb-5 leading-relaxed">Tentukan parameter pengujian gateway untuk sesi ini sebelum mengirimkan instruksi pertama.</p>
-            
-            <div class="w-full bg-slate-50/90 border border-slate-200/90 rounded-2xl p-4 text-left shadow-2xs space-y-3">
-              <div>
-                <label class="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1">PILIH MODEL</label>
-                <select id="pgModel" class="block w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white shadow-xs focus:ring-2 focus:ring-blue-500/20" onchange="handlePgModelChange(this.value)">
-                  <option value="gemini-3.8-flash-tiered" ${pgSelectedModel === 'gemini-3.8-flash-tiered' ? 'selected' : ''}>Gemini 3.8 Flash (Auto Tiered)</option>
-                  <option value="claude-sonnet-4-6" ${pgSelectedModel === 'claude-sonnet-4-6' ? 'selected' : ''}>Claude Sonnet 4.6 (Thinking)</option>
-                  <option value="claude-opus-4-6-thinking" ${pgSelectedModel === 'claude-opus-4-6-thinking' ? 'selected' : ''}>Claude Opus 4.6 (Thinking)</option>
-                  <option value="gpt-oss-120b-medium" ${pgSelectedModel === 'gpt-oss-120b-medium' ? 'selected' : ''}>GPT-OSS 120B (Medium)</option>
-                </select>
-              </div>
+            <h3 class="text-lg font-black text-slate-900 mb-1">Playground Antigravity Gateway</h3>
+            <p class="text-xs text-slate-500 mb-5 max-w-md leading-relaxed">Pilih model &amp; skills di bilah atas, lalu mulai percakapan atau gunakan pintasan ide dinamis di bawah ini.</p>
 
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <label class="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1">AKUN PENGUJI</label>
-                  <select id="pgAccount" class="block w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs bg-white shadow-xs focus:ring-2 focus:ring-blue-500/20" onchange="handlePgAccountChange(this.value)">
-                    ${accountOptions}
-                  </select>
-                </div>
+            <div class="w-full mb-2.5 flex items-center justify-between px-1">
+              <span class="text-xs font-bold text-slate-700 inline-flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-blue-600"><use href="#icon-sparkles"></use></svg>
+                Pintasan Rekomendasi
+              </span>
+              <button type="button" class="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors px-2 py-0.5 rounded-lg hover:bg-blue-50 cursor-pointer" onclick="randomizeAllQuickPrompts()" title="Acak seluruh kumpulan ide rekomendasi">
+                <svg class="w-3 h-3"><use href="#icon-refresh-cw"></use></svg>
+                Acak Ide Baru
+              </button>
+            </div>
 
-                <div>
-                  <label class="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1">PROYEK TERSEDIA</label>
-                  <select id="pgProject" class="block w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs bg-white shadow-xs focus:ring-2 focus:ring-blue-500/20" onchange="handlePgProjectChange(this.value)">
-                    ${projectOptions}
-                  </select>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
+              <!-- Kartu 1: Optimasi Kode -->
+              <button type="button" class="p-3 rounded-xl border border-slate-200/90 bg-slate-50/70 hover:bg-white hover:border-emerald-400 hover:shadow-xs transition-all text-xs group cursor-pointer" onclick="pickRandomQuickPrompt('code', true)" title="Klik untuk mengacak dan menerapkan prompt kode">
+                <div class="font-bold text-slate-800 flex items-center justify-between gap-1.5 group-hover:text-emerald-600">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-emerald-500"><use href="#icon-zap"></use></svg>
+                    <span>Optimasi Kode</span>
+                  </div>
+                  <span class="text-[9.5px] font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60">Acak</span>
                 </div>
-              </div>
+                <div id="pgQuickPreview-code" class="text-[11px] text-slate-500 mt-1 truncate transition-colors">${escapeHtml(codePrompt)}</div>
+              </button>
+
+              <!-- Kartu 2: Arsitektur Sistem -->
+              <button type="button" class="p-3 rounded-xl border border-slate-200/90 bg-slate-50/70 hover:bg-white hover:border-blue-400 hover:shadow-xs transition-all text-xs group cursor-pointer" onclick="pickRandomQuickPrompt('architecture', true)" title="Klik untuk mengacak dan menerapkan prompt arsitektur">
+                <div class="font-bold text-slate-800 flex items-center justify-between gap-1.5 group-hover:text-blue-600">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-blue-500"><use href="#icon-cpu"></use></svg>
+                    <span>Arsitektur Sistem</span>
+                  </div>
+                  <span class="text-[9.5px] font-mono text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200/60">Acak</span>
+                </div>
+                <div id="pgQuickPreview-architecture" class="text-[11px] text-slate-500 mt-1 truncate transition-colors">${escapeHtml(archPrompt)}</div>
+              </button>
+
+              <!-- Kartu 3: Riset Web Live -->
+              <button type="button" class="p-3 rounded-xl border border-slate-200/90 bg-slate-50/70 hover:bg-white hover:border-purple-400 hover:shadow-xs transition-all text-xs group cursor-pointer" onclick="pickRandomQuickPrompt('search', true)" title="Klik untuk mengacak dan menerapkan prompt pencarian live">
+                <div class="font-bold text-slate-800 flex items-center justify-between gap-1.5 group-hover:text-purple-600">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-purple-500"><use href="#icon-search"></use></svg>
+                    <span>Pencarian Web Live</span>
+                  </div>
+                  <span class="text-[9.5px] font-mono text-purple-600 bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200/60">Acak</span>
+                </div>
+                <div id="pgQuickPreview-search" class="text-[11px] text-slate-500 mt-1 truncate transition-colors">${escapeHtml(searchPrompt)}</div>
+              </button>
+
+              <!-- Kartu 4: Desain Skema & API -->
+              <button type="button" class="p-3 rounded-xl border border-slate-200/90 bg-slate-50/70 hover:bg-white hover:border-amber-400 hover:shadow-xs transition-all text-xs group cursor-pointer" onclick="pickRandomQuickPrompt('schema', true)" title="Klik untuk mengacak dan menerapkan prompt skema & API">
+                <div class="font-bold text-slate-800 flex items-center justify-between gap-1.5 group-hover:text-amber-600">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-amber-500"><use href="#icon-layers"></use></svg>
+                    <span>Desain Skema &amp; API</span>
+                  </div>
+                  <span class="text-[9.5px] font-mono text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200/60">Acak</span>
+                </div>
+                <div id="pgQuickPreview-schema" class="text-[11px] text-slate-500 mt-1 truncate transition-colors">${escapeHtml(schemaPrompt)}</div>
+              </button>
             </div>
           </div>
         `;
+        renderPlaygroundPromptChips();
         return;
       }
 
@@ -3072,16 +3708,17 @@ let currentTab = 'dashboard';
           `;
         }
 
-        // Assistant message (Great Sage Ciel)
+        // Assistant message (AI Assistant)
+        const modelBadge = m.meta?.model ? `<span class="text-[10px] text-slate-400 font-mono">(${escapeHtml(m.meta.model)})</span>` : '';
         return `
           <div class="flex flex-col w-full mb-3.5 items-start">
             <div class="flex items-center gap-1.5 mb-1 px-1">
-              <div class="w-4 h-4 rounded-full bg-violet-600 text-white flex items-center justify-center text-[9px] font-bold">C</div>
-              <span class="text-xs font-bold text-slate-700">Great Sage (Ciel)</span>
-              ${idx === 1 && m.meta ? `<span class="text-[10px] text-slate-400 font-mono">(${escapeHtml(m.meta.model || '')})</span>` : ''}
+              <div class="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px] font-bold">AI</div>
+              <span class="text-xs font-bold text-slate-700">AI Assistant</span>
+              ${modelBadge}
             </div>
             <div class="flex items-start gap-1.5 w-full group">
-              <div class="chat-bubble assistant max-w-[calc(100%-54px)]">
+              <div class="chat-bubble assistant max-w-[calc(100%-54px)] ${isStreamingTurn ? 'is-streaming' : ''}">
                 ${renderAssistantBubble(m, isStreamingTurn)}
               </div>
               ${(!isStreamingTurn || m.content || (m.toolActivities && m.toolActivities.length > 0)) ? `
@@ -3108,6 +3745,11 @@ let currentTab = 'dashboard';
 
     function clearPlayground() {
       playgroundHistory = [];
+      playgroundArtifacts = [];
+      activeCanvasArtifactId = null;
+      closePlaygroundCanvas();
+      const badge = document.getElementById('pgCanvasBadge');
+      if (badge) badge.classList.add('hidden');
       const sess = getActivePlaygroundSession();
       if (sess) {
         sess.messages = [];
@@ -3532,7 +4174,7 @@ let currentTab = 'dashboard';
       if (usageRefreshTimer) clearInterval(usageRefreshTimer);
       usageRefreshTimer = setInterval(() => {
         if (isUsageRefreshPaused) return;
-        if (currentTab !== 'usage' && currentTab !== 'dashboard') return;
+        if (currentTab !== 'usage' && currentTab !== 'dashboard' && currentTab !== 'provider') return;
 
         usageRefreshSeconds--;
         const badge = document.getElementById('usageCountdownBadge');
@@ -4335,3 +4977,16 @@ window.closeCreateSkillModal = closeCreateSkillModal;
 window.submitCreateSkill = submitCreateSkill;
 window.resetBuiltinSkills = resetBuiltinSkills;
 window.deleteSkillFromManager = deleteSkillFromManager;
+window.setPlaygroundInput = setPlaygroundInput;
+window.pickRandomQuickPrompt = pickRandomQuickPrompt;
+window.randomizeAllQuickPrompts = randomizeAllQuickPrompts;
+window.renderPlaygroundPromptChips = renderPlaygroundPromptChips;
+window.togglePlaygroundCanvas = togglePlaygroundCanvas;
+window.openPlaygroundCanvas = openPlaygroundCanvas;
+window.closePlaygroundCanvas = closePlaygroundCanvas;
+window.setCanvasViewMode = setCanvasViewMode;
+window.openArtifactInCanvas = openArtifactInCanvas;
+window.refreshCanvasPreview = refreshCanvasPreview;
+window.copyCanvasCode = copyCanvasCode;
+window.downloadCanvasArtifact = downloadCanvasArtifact;
+window.openCanvasInNewTab = openCanvasInNewTab;

@@ -148,7 +148,13 @@ func (r *AntigravityResponse) Extract() (text string, reasoningText string, tool
 		finishReason = mapFinishReason(c.FinishReason)
 	}
 
-	return sb.String(), rsb.String(), toolCalls, finishReason
+	text = sb.String()
+	reasoningText = rsb.String()
+	if text == "" && reasoningText != "" {
+		text = reasoningText
+	}
+
+	return text, reasoningText, toolCalls, finishReason
 }
 
 func (r *AntigravityResponse) ExtractText() (string, string) {

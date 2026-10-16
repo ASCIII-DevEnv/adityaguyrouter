@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -16,6 +17,11 @@ type Config struct {
 	TokenUsagePath string
 	FallbacksPath  string
 	StrategyPath   string
+
+	// Timeout controls
+	UpstreamTimeoutFlash    time.Duration
+	UpstreamTimeoutThinking time.Duration
+	StreamMaxDuration       time.Duration
 
 	// Google Antigravity OAuth App credentials
 	OAuthClientID     string
@@ -79,6 +85,27 @@ func LoadConfig() *Config {
 		}
 	}
 
+	flashTimeoutSec := 60
+	if v := os.Getenv("UPSTREAM_TIMEOUT_FLASH_SEC"); v != "" {
+		if s, err := strconv.Atoi(v); err == nil && s > 0 {
+			flashTimeoutSec = s
+		}
+	}
+
+	thinkingTimeoutSec := 120
+	if v := os.Getenv("UPSTREAM_TIMEOUT_THINKING_SEC"); v != "" {
+		if s, err := strconv.Atoi(v); err == nil && s > 0 {
+			thinkingTimeoutSec = s
+		}
+	}
+
+	streamMaxMin := 10
+	if v := os.Getenv("STREAM_MAX_DURATION_MIN"); v != "" {
+		if m, err := strconv.Atoi(v); err == nil && m > 0 {
+			streamMaxMin = m
+		}
+	}
+
 	return &Config{
 		Port:         port,
 		DataDir:      dataDir,
@@ -89,6 +116,10 @@ func LoadConfig() *Config {
 		TokenUsagePath: filepath.Join(dataDir, "token_usage.json"),
 		FallbacksPath:  filepath.Join(dataDir, "fallbacks.json"),
 		StrategyPath:   filepath.Join(dataDir, "provider_strategy.json"),
+
+		UpstreamTimeoutFlash:    time.Duration(flashTimeoutSec) * time.Second,
+		UpstreamTimeoutThinking: time.Duration(thinkingTimeoutSec) * time.Second,
+		StreamMaxDuration:       time.Duration(streamMaxMin) * time.Minute,
 
 		// Public Antigravity OAuth Client (obfuscated from static push scanner)
 		OAuthClientID:     getEnvOrDefault("GOOGLE_OAUTH_CLIENT_ID", decodeParts("1071006060591", "-tmhssin2h21lcre235vtolojh4g403ep", ".apps.googleusercontent.com")),
@@ -106,7 +137,7 @@ func LoadConfig() *Config {
 
 		CloudCodeBaseURL:          "https://cloudcode-pa.googleapis.com",
 		DailyCloudCodeBaseURL:     "https://daily-cloudcode-pa.googleapis.com",
-		LoadCodeAssistURL:         "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+		LoadCodeAssistURL:         "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
 		QuotaSummaryPath:          "/v1internal:retrieveUserQuotaSummary",
 		ModelsPath:                "/v1internal:fetchAvailableModels",
 		GenerateContentPath:       "/v1internal:generateContent",

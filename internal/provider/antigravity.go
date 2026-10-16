@@ -176,25 +176,41 @@ func (c *AntigravityClient) LoadCodeAssist(ctx context.Context, accessToken stri
 	}
 	pBytes, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.LoadCodeAssistURL, bytes.NewReader(pBytes))
-	if err != nil {
-		return "", "", err
+	urls := []string{
+		c.cfg.DailyCloudCodeBaseURL + "/v1internal:loadCodeAssist",
+		c.cfg.CloudCodeBaseURL + "/v1internal:loadCodeAssist",
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", c.cfg.UserAgent)
-	req.Header.Set("x-request-source", "local")
 
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", "", err
+	var res *http.Response
+	var lastLoadErr error
+	for _, targetURL := range urls {
+		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(pBytes))
+		if err != nil {
+			return "", "", err
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", c.cfg.UserAgent)
+		req.Header.Set("x-request-source", "local")
+
+		res, err = c.httpClient.Do(req)
+		if err == nil && res.StatusCode == http.StatusOK {
+			lastLoadErr = nil
+			break
+		}
+		if res != nil {
+			body, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			lastLoadErr = fmt.Errorf("loadCodeAssist failed (%d) from %s: %s", res.StatusCode, targetURL, string(body))
+		} else {
+			lastLoadErr = err
+		}
+	}
+
+	if lastLoadErr != nil {
+		return "", "", lastLoadErr
 	}
 	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(res.Body)
-		return "", "", fmt.Errorf("loadCodeAssist failed (%d): %s", res.StatusCode, string(body))
-	}
 
 	var resp struct {
 		CloudaicompanionProject interface{} `json:"cloudaicompanionProject"`
@@ -232,8 +248,8 @@ func (c *AntigravityClient) LoadCodeAssist(ctx context.Context, accessToken stri
 
 // CallCloudCode makes authenticated requests to Google Cloud Code PA endpoint with failover
 func (c *AntigravityClient) CallCloudCode(ctx context.Context, path string, accessToken, projectID string, body []byte) (*http.Response, error) {
-	// Production CloudCode is the primary endpoint; daily staging is optional fallback
-	baseURLs := []string{c.cfg.CloudCodeBaseURL, c.cfg.DailyCloudCodeBaseURL}
+	// Daily CloudCode is the primary endpoint (identical to agy / Antigravity); production is fallback
+	baseURLs := []string{c.cfg.DailyCloudCodeBaseURL, c.cfg.CloudCodeBaseURL}
 
 	var lastErr error
 	for i, base := range baseURLs {
@@ -261,6 +277,10 @@ func (c *AntigravityClient) CallCloudCode(ctx context.Context, path string, acce
 		if err == nil {
 			// If upstream returns 200 OK or 400 Bad Request / 422 (client format error), return immediately
 			if res.StatusCode == http.StatusOK || res.StatusCode == http.StatusBadRequest || res.StatusCode == http.StatusUnprocessableEntity {
+				return res, nil
+			}
+			// If upstream returns 401 Unauthorized, return immediately so token refresh can trigger without wasting time failing over to daily host
+			if res.StatusCode == http.StatusUnauthorized {
 				return res, nil
 			}
 			// If this host returns 403 Forbidden, 404 Not Found, 429, or 5xx, and there is another host:

@@ -584,10 +584,10 @@
       align-items: center;
     }
     .chat-bubble {
-      padding: 0.85rem 1.15rem;
+      padding: 0.9rem 1.25rem;
       border-radius: 14px;
-      font-size: 0.85rem;
-      line-height: 1.6;
+      font-size: 0.9375rem;
+      line-height: 1.65;
       max-width: 82%;
     }
     .chat-bubble.user {
@@ -686,5 +686,20 @@
     @keyframes modalPop {
       from { opacity: 0; transform: scale(0.96); }
       to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Playground Canvas Split Screen */
+    #pgCanvasPanel:not(.hidden) {
+      display: flex !important;
+      animation: canvasSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes canvasSlideIn {
+      from { opacity: 0; transform: translateX(18px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    #pgCanvasIframe {
+      background-color: #ffffff;
+      width: 100%;
+      height: 100%;
     }
   

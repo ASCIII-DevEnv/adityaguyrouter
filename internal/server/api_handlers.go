@@ -235,6 +235,7 @@ func (h *ApiHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
 				"cooldownUntil":      a.CooldownUntil,
 				"cooldownReason":     a.CooldownReason,
 				"totalRequests":      a.TotalRequests,
+				"totalTokens":        a.TotalTokens,
 				"quota5hPercent":     a.Quota5hPercent,
 				"quota5hResetAt":     a.Quota5hResetAt,
 				"quotaWeeklyPercent": a.QuotaWeeklyPercent,
@@ -295,7 +296,7 @@ func (h *ApiHandler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
 		if body.Action == "refresh" {
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			defer cancel()
-			validAcc, err := h.pool.EnsureValidToken(ctx, acc)
+			validAcc, err := h.pool.ForceRefreshToken(ctx, acc)
 			if err == nil {
 				h.pool.FetchAccountQuota(ctx, validAcc)
 				if time.Now().After(validAcc.CooldownUntil) {
